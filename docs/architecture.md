@@ -3,10 +3,21 @@
 **Status:** Settled design (source of truth). No implementation yet — code was
 removed after we locked the design (see commit history / ADR 0001).
 
-A real-time GPU channel emulator between an **ORU module** (facing a real 5G NR vDU
-over a custom fronthaul) and a **vUE module** (many emulated 5G UEs). It transforms
-frequency-domain IQ, applies a ray-traced channel in real time, and performs
-precoding / receive-combining on behalf of the radio unit.
+**ORCA** (*O-RU Channel Applier*) is a real-time GPU application that
+**stands in for the O-RU** between a real 5G NR **vDU** and a set of **emulated UEs
+(vUE)**. It terminates the vDU's fronthaul as the O-RU, transforms frequency-domain IQ,
+applies a ray-traced channel in real time, and performs precoding / receive-combining **on
+behalf of the radio unit**.
+
+**Role & interfaces**
+
+- **North — vDU side:** vDU ↔ ORCA over the **ORU fronthaul packet format**
+  (Spec B). ORCA **is** the O-RU here — it covers the **RU role** (fronthaul
+  termination + precoding/combining on behalf of the RU). Transport: DOCA GPUNetIO +
+  GPUDirect RDMA. This is the only NIC-crossing interface.
+- **South — vUE side:** ORCA ↔ in-box **vUE** over **DPDK shared memory**
+  (control + handles); bulk per-antenna IQ stays in HBM, shared via CUDA IPC
+  ([ADR 0004](decisions/0004-vue-interface-ipc.md)).
 
 ## Requirements (locked)
 
@@ -15,13 +26,15 @@ precoding / receive-combining on behalf of the radio unit.
 | Fronthaul | **Custom packet format** (real vDU on the network side, custom framing). See [Spec B](specs/fronthaul-packet-format.md). |
 | GPU / ingress | **NVIDIA datacenter (e.g. H100) + DOCA GPUNetIO + GPUDirect RDMA**, zero-copy packet→GPU. |
 | Scale | **Massive MIMO, 32–64+ TRX** (default 64T). |
+| Spatial multiplexing | **Phase 1 = SU-MIMO** (one UE per time-frequency resource; OFDMA scheduling; per-resource layers = UE rank ≤4). **MU-MIMO deferred** (16× `H`-read blow-up → needs Spec C). See [ADR 0005](decisions/0005-su-mimo-phase1.md), [deferred-goals](deferred-goals.md#mu-mimo). |
 | Channel | **Ray-traced**, with **slow CIR update + per-symbol apply** (heavy ray tracing decoupled from the hot path). |
 | vUE | **Many UEs**, full per-symbol budget. |
 | Precoding | **Both** vDU-supplied (C-plane) **and** GPU-computed (ZF/MMSE/SVD from SRS). |
 | Cadence | **Per OFDM symbol**, **µ=1** (35.7 µs). See [Spec A](specs/timing-and-deadlines.md). |
 | Hot-path sync | **CUDA Graph + CPU-controlled DOCA + indirection-cell double buffering.** See [ADR 0001](decisions/0001-hot-path-synchronization.md). |
 | Budget model | **Two clocks** — *throughput* (one symbol/`T_sym`=35.7 µs; bottleneck stage ≤ `T_sym`) and *latency* (deliver within `L_max` ≈ 70 µs working, < real fronthaul tolerance). `T_proc≤3µs` retired. See [ADR 0003](decisions/0003-throughput-latency-pipeline.md). |
-| vUE location | **In-box, GPU-resident.** Only the vDU side crosses the NIC fronthaul; vUE side is an in-HBM handoff (host-CPU vUE rejected — PCIe wall). NIC budget = vDU side only. See [ADR 0003 §5](decisions/0003-throughput-latency-pipeline.md). |
+| vUE location | **In-box, GPU-resident.** Only the vDU side crosses the NIC fronthaul; vUE side is an in-HBM handoff. NIC budget = vDU side only. See [ADR 0003 §5](decisions/0003-throughput-latency-pipeline.md). |
+| vUE IPC | **Separate process.** Phase 1: bulk IQ in HBM via **CUDA IPC**, **DPDK shm** control plane (GPU PHY, PCIe H100). Phase 2: CPU PHY on **Grace-Hopper**, bulk to host over NVLink-C2C. See [ADR 0004](decisions/0004-vue-interface-ipc.md). |
 | Scaling | **Cells-per-box** bounded by the throughput clock (cost lever, minimize boxes); more boxes = replication (later phase); inter-box comms only if interfering cells split across boxes. See [ADR 0003 §6](decisions/0003-throughput-latency-pipeline.md). |
 | Cells | **Multiple cells, single GPU box.** One emulator instance hosts all cells (one fronthaul flow set per vDU); shared PTP/S-plane time. See [ADR 0002](decisions/0002-multi-cell-interference-mobility.md). |
 | Interference | **Inter-cell, multi-UE.** Cross-link channel per `(cell, ue)`; each UE = serving cell + interferers. **Configurable**: neighbor-limited top-K (default) → all-to-all. See [ADR 0002](decisions/0002-multi-cell-interference-mobility.md). |
@@ -30,11 +43,11 @@ precoding / receive-combining on behalf of the radio unit.
 ## Topology & data flow
 
 ```
-                  custom fronthaul                 GPU box                  custom
-  ┌──────────┐   (your framing,          ┌──────────────────────┐         ┌──────────┐
-  │ Real vDU │◄───vDU symbol cadence)────►│   CUDA emulator      │◄───────►│   vUE    │
-  │ (3rd pty)│      DL: PDSCH IQ         │  precode → channel    │  IQ to  │ (N UEs)  │
-  └──────────┘      UL: PUSCH/SRS IQ     │  → combine            │  UEs    └──────────┘
+              ORU fronthaul pkt fmt              ORCA                   DPDK shared mem
+  ┌──────────┐   (ORCA = O-RU)           ┌──────────────────────┐    (bulk in HBM      ┌──────────┐
+  │ Real vDU │◄── DOCA GPUNetIO/RDMA ────►│  precode → channel    │◄──  via CUDA IPC) ──►│   vUE    │
+  │ (3rd pty)│      DL: PDSCH IQ         │  → combine            │                      │ (N UEs)  │
+  └──────────┘      UL: PUSCH/SRS IQ     │  ⇒ covers O-RU/RU role │                      └──────────┘
                                          └──────────────────────┘
 ```
 
@@ -92,15 +105,23 @@ Mobility is **grid-quantized and deterministic**: no live ray tracing on the run
 path; the ray tracer is the offline table generator. See
 [ADR 0002 §5](decisions/0002-multi-cell-interference-mobility.md).
 
-## Precoding / combining — both modes
+## Precoding / combining
+
+**Phase 1 — beam-indexed codebook ([ADR 0006](decisions/0006-beam-indexed-precoding.md)).**
+A codebook of precoding/combining vectors **indexed by `beam_id`** is **resident in GPU
+memory in advance**. The vDU supplies `beam_id` per resource at runtime via the C-plane;
+the hot path **gathers** the vector(s) by `beam_id` to form `W` (`64 × rank`) and applies
+`y = W·x` (DL) / combines `64 → rank` (UL). No matrices on the wire, no weight computation.
 
 | | DL precode | UL combine |
 |---|---|---|
-| **vDU-supplied** | weights from C-plane → apply `y = Wx` per SC | vDU-supplied combiner |
-| **GPU-computed** | estimate H from uplink SRS → ZF / MMSE / SVD per PRB-group | MMSE / MRC receive combining |
+| **beam_id codebook** (Phase 1) | gather `precodeBook[beam_id]` → `W` (`64×rank`) → `y = Wx` | gather `combineBook[beam_id]` → `64 → rank` |
+| **GPU-computed (SRS)** — *deferred* | estimate H from SRS → ZF/MMSE/SVD (cuSOLVER) | MMSE / MRC |
 
-Weight **computation** runs on the slow plane (cuSOLVER batched); weight
-**application** is per-symbol on the hot path. Both modes share the apply path.
+SRS-based, channel-matched precoding is **deferred** (→
+[deferred-goals](deferred-goals.md#gpu-precoding)); Phase 1 needs no cuSOLVER and no
+slow-plane weight estimation. An explicit-`W` C-plane variant remains possible but is not
+the Phase-1 path.
 
 ## Spatial dimensions
 
@@ -121,7 +142,10 @@ on behalf of the RU"), exactly inverting the DL precode. The combiner weight mat
 whether vDU-supplied or GPU-computed from SRS.
 
 Defaults (`µ=1`, 100 MHz): `numTx = 64`, `numLayers = 16`, `numPrb = 273`,
-`prbGroupSize = 4`. The combine stage operates in **RU-antenna space** (`64 → 16`), not
+`prbGroupSize = 4`. **Phase 1 (SU-MIMO, [ADR 0005](decisions/0005-su-mimo-phase1.md)):**
+each time-frequency resource carries **one UE** with `layers = UE rank ≤ 4`, so `W` per SC
+is `64 × rank`; `numLayers = 16` is the **MU aggregate** and applies only when MU-MIMO is
+restored (deferred). The combine stage operates in **RU-antenna space** (`64 → rank`), not
 per-UE. With multiple cells the channel tensor gains a **cell** dimension and becomes a
 **cross-link** between cell TRX and UE rx-port — `H[cell][ue][rx][tx][sc]` — covering
 each UE's serving cell and its interferers (next section).
@@ -169,9 +193,10 @@ decision and rationale. Summary:
 | `orchestr/` | symbol ring, coverage, deadline scheduler, `T_air` timing |
 | `dsp/` | precode / channel-apply (cross-link, batched GEMV→GEMM per Spec C / ADR 0002 §6) / combine kernels (CUDA graph nodes) |
 | `channel/` | offline CIR-table generator (ray tracer) + grid lookup, CIR→H FFT, indirection-cell double buffer |
-| `estim/` | SRS channel estimation + weight computation (cuSOLVER) |
-| `scenario/` | cells, UE grid + mobility, serving-cell/interferer association, contribution lists |
-| `oru/` `vue/` | the two endpoint modules (per-cell fronthaul flow sets) |
+| `estim/` | SRS channel estimation + weight computation (cuSOLVER) — **deferred (ADR 0006)**, dormant in Phase 1 |
+| `scenario/` | cells, UE grid + mobility, serving-cell/interferer association, contribution lists, **resident beam codebook** (ADR 0006) |
+| `oru/` | vDU-facing endpoint, per-cell custom-fronthaul flow sets (NIC) |
+| `vue/` | UE-facing endpoint + `VueTransport` (Phase-1 CUDA-IPC / Phase-2 DPDK-over-NVLink backends), ADR 0004 |
 | `app/` | wiring, graph capture/launch, per-symbol event-gated egress |
 | `tests/` | golden-model bit-exactness, loopback, jitter harness |
 

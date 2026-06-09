@@ -78,9 +78,9 @@ The vUE module runs **inside the GPU box**. Therefore:
 
 - **Only the vDU side crosses the NIC** (custom fronthaul over DOCA GPUNetIO). The
   **vUE side is an in-GPU-memory handoff** — no NIC, and no fronthaul packetization is
-  required on that side (Spec B is scoped to the vDU/fronthaul side; the vUE-side
-  interface form — in-memory vs a uniform packet API for modularity — is a minor open
-  item).
+  required on that side (Spec B is scoped to the vDU/fronthaul side). The vUE-side
+  interface form is decided in **[ADR 0004](0004-vue-interface-ipc.md)**: a shared HBM
+  buffer via **CUDA IPC** with a **DPDK shared-memory** control plane (Phase 1).
 - **vUE compute must be GPU-resident, not host-CPU.** The DL output to the vUE is
   per-UE **per-rx-antenna** IQ — for the 7-cell reference, ~5.7 MB/symbol (~160 GB/s).
   Kept in HBM that is trivial (≪ 3.35 TB/s); pushed to a host-CPU vUE it would cross
@@ -141,5 +141,4 @@ The vUE module runs **inside the GPU box**. Therefore:
 
 ## Open
 - **`L_max`** actual value from the vDU/vUE fronthaul timing tolerance (TBD; ≤ ~70 µs).
-- **vUE-side interface form** — in-memory handoff vs a uniform packet API for modularity
-  (minor).
+- ~~vUE-side interface form~~ → resolved in [ADR 0004](0004-vue-interface-ipc.md).

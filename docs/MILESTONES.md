@@ -5,15 +5,18 @@ lives in per the [intended structure](architecture.md#intended-module-structure-
 
 | Stage | Goal | Module(s) |
 |---|---|---|
-| **1** | Loopback, no channel: vDU→ORU→identity→vUE over custom FH; GPUDirect path proven; per-symbol jitter measured. | `fh/`, `oru/`, `vue/`, `orchestr/`, `app/` |
-| **2** | DL precode with **vDU-supplied** weights + AWGN; validate vs CPU golden. | `estim/`, `dsp/` (precode) |
+| **1** | **Loopback, no channel (identity transform).** *North:* vDU ↔ ORCA over the **ORU fronthaul packet format** (Spec B) — ORCA plays the **O-RU/RU role** and terminates the fronthaul; DOCA GPUNetIO/GPUDirect path proven. *South:* ORCA ↔ vUE over **DPDK shared memory** (control + handles; bulk IQ in HBM via CUDA IPC, ADR 0004). Per-symbol jitter measured. | `fh/`, `oru/` (= RU termination), `vue/`, `orchestr/`, `app/` |
+| **2** | DL precode via **resident beam codebook**, `beam_id` from the vDU C-plane (ADR 0006) + AWGN; validate vs CPU golden. | `scenario/` (codebook), `dsp/` (precode) |
 | **3** | Static multipath channel apply (single CIR) + Doppler rotor. | `channel/`, `dsp/` (channel-apply) |
 | **4** | Slow ray tracer / trace replay feeding the indirection-cell double buffer. | `channel/` |
-| **5** | SRS estimation + **GPU-computed** ZF/MMSE/SVD; UL combine. | `estim/`, `dsp/` (combine) |
+| **5** | **UL combine** via resident combining codebook, `beam_id` from the vDU (ADR 0006). *(SRS / GPU-computed ZF/MMSE/SVD deferred — see deferred-goals.)* | `scenario/`, `dsp/` (combine) |
 | **6** | Scale-out: many vUEs, deadline scheduler, sustained real-time soak. | `orchestr/`, `app/` |
-| **7** | **Multi-cell + inter-cell interference**: cell dimension end-to-end; cross-link `H[cell][ue]`; configurable contributor set (neighbor-limited → all-to-all); channel-apply as a batched **GEMV → GEMM** (GEMM only after the `H`-footprint reduction; ADR 0002 §6). | `scenario/`, `dsp/`, `channel/`, `fh/` |
-| **8** | **Dynamic grid mobility**: offline per-`(cell, grid-point)` CIR table; slow-plane lookup/interp on UE move; per-link per-symbol Doppler; serving-cell handover. | `scenario/`, `channel/` |
+| **7** | **Multi-cell + inter-cell interference** (Phase-1 target: **2 cells, all-to-all, SU-MIMO**): cell dimension end-to-end; cross-link `H[cell][ue]`; per-symbol scheduling/allocation map (ADR 0005); channel-apply as a batched **GEMV** — per-SC FP16 `H` fits HBM under SU (~11%, ADR 0005), no `H`-footprint reduction needed. | `scenario/`, `dsp/`, `channel/`, `fh/` |
+| **8** | **Dynamic grid mobility**: offline per-`(cell, grid-point)` CIR/`H` table resident in GPU memory; slow-plane lookup/interp on UE move; per-link per-symbol Doppler; serving-cell handover. | `scenario/`, `channel/` |
+| **9** *(deferred — very later)* | **MU-MIMO**: stack UEs per resource. **Requires Spec C** (`H` per-PRB-group/tap-domain) for the 16× `H`-read blow-up (ADR 0002 §6), plus MU precoding/pairing. See [deferred-goals → MU-MIMO](deferred-goals.md#mu-mimo). | `dsp/`, `channel/`, `estim/` |
 
+> **Phase 1 = SU-MIMO, 2 cells, all-to-all, per-SC FP16 `H` resident** (ADR 0005). MU-MIMO
+> (Stage 9) and Spec C are deferred — see [deferred-goals.md](deferred-goals.md).
 > **Design in the cell dimension from Stage 1.** Even while Stages 1–6 run single-cell,
 > tensor layouts, the reassembly key, and eAxC addressing should carry `cell` from the
 > start (ADR 0002) so Stage 7 is an extension, not a refactor.

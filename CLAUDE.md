@@ -1,8 +1,13 @@
-# oru-vue-emulator — project memory
+# ORCA (*O-RU Channel Applier*) — project memory
 
-Real-time GPU 5G channel emulator between an **ORU module** (custom fronthaul to a real
-vDU) and a **vUE module** (many emulated UEs): per-OFDM-symbol precode → channel-apply →
+**ORCA** is a real-time GPU app that **stands in for the O-RU** between a real
+5G NR **vDU** and **emulated UEs (vUE)**: per-OFDM-symbol precode → channel-apply →
 combine, with a ray-traced channel, multi-cell interference, and grid-wise UE mobility.
+It covers the **RU role** (fronthaul termination + precoding/combining on behalf of the RU).
+
+**Interfaces:** *North (vDU)* = **ORU fronthaul packet format** (Spec B), DOCA
+GPUNetIO/GPUDirect — the only NIC-crossing side, ORCA = the O-RU. *South (vUE,
+in-box)* = **DPDK shared memory** (control + handles; bulk IQ in HBM via CUDA IPC, ADR 0004).
 
 ## Current state: design-first, NO code yet
 
@@ -16,6 +21,10 @@ the source of truth** — read them before proposing anything:
 - @docs/decisions/0001-hot-path-synchronization.md — ADR 0001: CUDA Graph + CPU-controlled DOCA + indirection cell.
 - @docs/decisions/0002-multi-cell-interference-mobility.md — ADR 0002: multi-cell, interference, mobility.
 - @docs/decisions/0003-throughput-latency-pipeline.md — ADR 0003: throughput/latency decoupling, symbol pipeline, vUE in-box.
+- @docs/decisions/0004-vue-interface-ipc.md — ADR 0004: vUE IPC — CUDA IPC (HBM) + DPDK shm control now; host/NVLink later.
+- @docs/decisions/0005-su-mimo-phase1.md — ADR 0005: SU-MIMO for Phase 1; MU-MIMO deferred.
+- @docs/decisions/0006-beam-indexed-precoding.md — ADR 0006: beam_id codebook precoding; SRS deferred.
+- @docs/deferred-goals.md — register of deferred goals + the compromises to re-enable each.
 - @docs/MILESTONES.md — stage plan + hot-path invariants.
 
 ## Locked decisions (don't relitigate without an ADR)
@@ -28,8 +37,13 @@ the source of truth** — read them before proposing anything:
   retired** — compute gets up to a full period for throughput, contributes ~6 µs to the
   latency sum.
 - **vUE is in-box, GPU-resident (ADR 0003 §5):** only the vDU side crosses the NIC
-  fronthaul; vUE side is an in-HBM handoff. Host-CPU vUE is rejected (per-antenna IQ would
-  hit the PCIe wall). NIC budget = vDU side only (layer-domain IQ).
+  fronthaul; vUE side is an in-HBM handoff. NIC budget = vDU side only (layer-domain IQ).
+- **vUE IPC (ADR 0004):** vUE is a **separate in-box process**. **Phase 1 (now):**
+  GPU PHY on PCIe H100 — bulk per-antenna IQ stays in HBM, shared via **CUDA IPC**
+  (+ IPC events); **DPDK shared memory** carries the control plane only. **Phase 2
+  (future):** CPU PHY on **Grace-Hopper** — bulk moves to host over NVLink-C2C via DPDK
+  shm. The two migrations are coupled. Behind a `VueTransport` interface; buffer layout
+  stable across phases.
 - **Scaling (ADR 0003 §6):** cells-per-box bounded by the throughput clock (cost lever —
   minimize boxes); more boxes = replication (later phase); inter-box comms only if
   interfering cells split across boxes — partition so each UE's interferer set stays on
@@ -40,6 +54,18 @@ the source of truth** — read them before proposing anything:
 - **Multi-cell:** one GPU box hosts all cells; cross-link channel `H[cell][ue][rx][tx][sc]`;
   per-UE contributor set (serving + interferers) is configurable, neighbor-limited top-K
   by default → all-to-all (ADR 0002).
+- **Spatial multiplexing (ADR 0005):** **Phase 1 = SU-MIMO only** (one UE per
+  time-frequency resource; OFDMA scheduling separates UEs; per-resource layers = UE rank
+  ≤4). **MU-MIMO is deferred to a very later phase** — it re-introduces a 16× `H`-read
+  blow-up (→ needs Spec C). SU needs a **per-symbol scheduling/allocation map** from the
+  vDU. All-to-all interference retained either way.
+- **Phase-1 target:** SU-MIMO, **2 cells**, all-to-all interference, grid mobility, all
+  `H` resident as **per-subcarrier FP16** (~0.38 TB/s, ~11% HBM → fits; Spec C deferred),
+  µ=1, single PCIe H100.
+- **Precoding (ADR 0006):** **beam-indexed codebook** resident in GPU memory; vDU supplies
+  `beam_id` per resource at runtime (C-plane, alongside the SU scheduling map). Hot path
+  gathers `precodeBook[beam_id]`→`W` (`64×rank`); UL combine symmetric. **SRS /
+  GPU-computed ZF/MMSE/SVD deferred** (`estim/` dormant; no cuSOLVER in Phase 1).
 - **Mobility:** UE positions on a discrete grid; offline ray-traced per-(cell, grid-point)
   CIR table; slow-plane lookup/interp on move; per-link per-symbol Doppler; handover.
 - **Slow plane never touches the hot path**; publishes via atomic write to the indirection cell.
@@ -58,6 +84,8 @@ the source of truth** — read them before proposing anything:
    - **Still open (→ Spec C):** channel coherence granularity (per-SC vs per-PRB-group vs
      tap-domain) and the variables that pin the layout — **H precision** (FP16/BF16/INT8),
      **PRB-group size**, **tap count P** — to be set against a target delay spread.
+     **Deferred out of Phase 1 by ADR 0005** (SU-MIMO + per-SC FP16 fits at ~11% HBM);
+     becomes critical when MU-MIMO / more cells return. See deferred-goals.md.
 
 2. **Offline CIR-table toolchain (proposed Spec C)** — grid resolution, interpolation
    method, storage format, and how the OptiX tracer populates per-(cell, grid-point) CIR.
@@ -70,13 +98,13 @@ the source of truth** — read them before proposing anything:
    telemetry wire format (Spec B.7), YAML config loader.
 
 5. **`L_max` from real fronthaul tolerance** (ADR 0003) — working placeholder ~70 µs;
-   must be measured/negotiated; caps pipeline depth. Plus the vUE-side interface form
-   (in-memory handoff vs uniform packet API) — minor.
+   must be measured/negotiated; caps pipeline depth.
 
 ## Working agreement
 
 - It's early — favor design/decisions over code. New significant decisions get an ADR in
-  `docs/decisions/` (sequential numbering; ADR 0004 is next).
+  `docs/decisions/` (sequential numbering; ADR 0007 is next). Deferred scope lives in
+  @docs/deferred-goals.md — update it whenever something is pushed to a later phase.
 - Keep tensor layouts carrying the `cell` dimension from Stage 1 so multi-cell is an
   extension, not a refactor (MILESTONES note).
 - Intended layout when code resumes: `common/ fh/ orchestr/ dsp/ channel/ estim/

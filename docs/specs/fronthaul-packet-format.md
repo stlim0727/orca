@@ -1,11 +1,16 @@
-# Spec B — Custom fronthaul packet format
+# Spec B — ORU fronthaul packet format
 
 **Status:** Settled design (source of truth). No implementation yet.
 
-The custom fronthaul carries **frequency-domain IQ** (7.2x-style) between the ORU
-module (facing the real vDU) and the GPU emulator / vUE module. Carrying
-frequency-domain IQ keeps FFT/iFFT off the hot path; the CIR→frequency-response
-transform happens only at the slow CIR-update rate.
+This is the **ORU fronthaul packet format** spoken on the **north (vDU) interface** of
+**ORCA**. ORCA terminates it **as the O-RU** — i.e. it covers the
+RU role (fronthaul termination + precoding/combining on behalf of the RU). It is the only
+NIC-crossing interface; the **south (vUE) interface uses DPDK shared memory**, not this
+format (ADR 0004).
+
+The format carries **frequency-domain IQ** (7.2x-style, custom framing) between the vDU
+and ORCA. Carrying frequency-domain IQ keeps FFT/iFFT off the hot path; the
+CIR→frequency-response transform happens only at the slow CIR-update rate.
 
 Related: [Spec A — timing](timing-and-deadlines.md),
 [ADR 0001 — synchronization](../decisions/0001-hot-path-synchronization.md).
@@ -84,21 +89,28 @@ subcarriers, complex:
 - **BFP** (`cmp=1`): block floating point, shared exponent in `udCompParam` per
   section — ~half the bytes; matters at high line rate.
 
-## B.5 C-plane payload (`msgtyp = 1`) — precoding weights
+## B.5 C-plane payload (`msgtyp = 1`) — allocation + beam_id
 
-Carries **vDU-supplied** weights (one of the two precoding modes). Per-PRB-group:
+**Phase 1 ([ADR 0006](../decisions/0006-beam-indexed-precoding.md)):** the C-plane carries
+the per-resource **allocation + `beam_id`**, not weight matrices. Precoding/combining
+vectors live in a **resident beam codebook**; the hot path gathers them by `beam_id`. This
+also carries the SU-MIMO scheduling map (ADR 0005). Per section:
 
 | Field | Size | |
 |---|---|---|
-| `prbGroupStart` | u16 | first PRB group |
-| `prbGroupSize` | u16 | PRBs per group (e.g. 4) |
-| `numTx` | u8 | e.g. 64 |
-| `numLayers` | u8 | L |
-| `W[numTx · numLayers]` | ci16[] | row-major, Tx-major |
+| `prbStart` | u16 | first PRB of this allocation |
+| `numPrb` | u16 | PRB count |
+| `ueId` | u16 | scheduled UE (for `H`/grid lookup, SU-MIMO) |
+| `numLayers` | u8 | rank for this resource (≤ 4) |
+| `dir` | u8 | DL (precode) / UL (combine) |
+| `beamId[numLayers]` | u16[] | one beam index per layer → codebook lookup |
 
-A C-plane message for symbol `s` must arrive before `D_r(s)`; it is consumed on the
-**slow plane** and published to the hot path via the indirection cell (ADR 0001 §4),
-not parsed inside the symbol deadline.
+A C-plane message for symbol `s` must arrive before `D_r(s)`. `beam_id` → vector gathering
+happens on the hot path; the codebook itself is loaded once at startup.
+
+> **Deferred:** an explicit-`W` variant (full `numTx · numLayers` `ci16` matrix per
+> PRB-group) remains possible for non-codebook / SRS-derived precoding, but is not the
+> Phase-1 path. See [deferred-goals](../deferred-goals.md#gpu-precoding).
 
 ## B.6 S-plane (`msgtyp = 2`)
 
