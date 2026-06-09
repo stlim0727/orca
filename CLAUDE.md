@@ -5,9 +5,11 @@
 combine, with a ray-traced channel, multi-cell interference, and grid-wise UE mobility.
 It covers the **RU role** (fronthaul termination + precoding/combining on behalf of the RU).
 
-**Interfaces:** *North (vDU)* = **ORU fronthaul packet format** (Spec B), DOCA
-GPUNetIO/GPUDirect — the only NIC-crossing side, ORCA = the O-RU. *South (vUE,
-in-box)* = **DPDK shared memory** (control + handles; bulk IQ in HBM via CUDA IPC, ADR 0004).
+**Three in-box processes (ADR 0007):** `ORU process ↔ ORCA ↔ vUE`. *North (vDU)* = a
+**separate ORU process** owns the NIC + **ORU fronthaul packet format** (Spec B) over
+Ethernet (**DOCA deferred**) → relays layer IQ to ORCA via **host shm + H2D** (Spec F).
+*South (vUE, in-box)* = **DPDK shared memory** control; bulk per-antenna IQ in HBM via
+CUDA IPC (ADR 0004 / Spec D). ORCA = the O-RU/RU role; it never sees Ethernet.
 
 ## Current state: design-first, NO code yet
 
@@ -26,6 +28,8 @@ the source of truth** — read them before proposing anything:
 - @docs/decisions/0004-vue-interface-ipc.md — ADR 0004: vUE IPC — CUDA IPC (HBM) + DPDK shm control now; host/NVLink later.
 - @docs/decisions/0005-su-mimo-phase1.md — ADR 0005: SU-MIMO for Phase 1; MU-MIMO deferred.
 - @docs/decisions/0006-beam-indexed-precoding.md — ADR 0006: beam_id codebook precoding; SRS deferred.
+- @docs/decisions/0007-process-topology-doca-deferral.md — ADR 0007: 3-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north.
+- @docs/specs/oru-interface-contract.md — Spec F: ORU↔ORCA interface (north) — host shm bulk + H2D/D2H, DPDK control, alloc/beam map.
 - @docs/deferred-goals.md — register of deferred goals + the compromises to re-enable each.
 - @docs/MILESTONES.md — stage plan + hot-path invariants.
 
@@ -40,6 +44,11 @@ the source of truth** — read them before proposing anything:
   latency sum.
 - **vUE is in-box, GPU-resident (ADR 0003 §5):** only the vDU side crosses the NIC
   fronthaul; vUE side is an in-HBM handoff. NIC budget = vDU side only (layer-domain IQ).
+- **Process topology + DOCA deferral (ADR 0007):** **three in-box processes** — ORU
+  process (NIC + Spec B framing, kernel/DPDK, **DOCA deferred**), ORCA (GPU compute), vUE.
+  North bulk = **host shm + H2D/D2H** (Spec F), justified by small vDU-side volume (~3 GB/s
+  SU 2-cell). ORCA hot path (graph K0–K5) unchanged; only K0 source / K5 sink differ. Behind
+  an `OruTransport` so DOCA/GPUDirect can swap in later (removes the copy). DOCA → deferred-goals #11.
 - **vUE IPC (ADR 0004):** vUE is a **separate in-box process**. **Phase 1 (now):**
   GPU PHY on PCIe H100 — bulk per-antenna IQ stays in HBM, shared via **CUDA IPC**
   (+ IPC events); **DPDK shared memory** carries the control plane only. **Phase 2
@@ -106,7 +115,7 @@ the source of truth** — read them before proposing anything:
 ## Working agreement
 
 - It's early — favor design/decisions over code. New significant decisions get an ADR in
-  `docs/decisions/` (sequential numbering; ADR 0007 is next). Deferred scope lives in
+  `docs/decisions/` (sequential numbering; ADR 0008 is next). Deferred scope lives in
   @docs/deferred-goals.md — update it whenever something is pushed to a later phase.
 - Keep tensor layouts carrying the `cell` dimension from Stage 1 so multi-cell is an
   extension, not a refactor (MILESTONES note).

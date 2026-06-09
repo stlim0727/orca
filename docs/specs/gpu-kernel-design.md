@@ -266,24 +266,27 @@ the reduction loop. `64·rank` MACs/sc — light.
 
 ## E.7 K0 — Ingress convert/scatter, K5 — Egress pack, and noise
 
-### K0 — ci16 → cf32 scatter (ingress)
+### K0 — ci16 → cf32 convert (ingress)
 
-DOCA GPUNetIO DMAs U-plane payloads into per-section GPU staging buffers. K0 converts the
-`ci16` IQ to `cf32` and scatters into `x_dl[cell][layer][sc]` at `sc = startPrb·12 + k`.
+Phase 1 is **host-staged** ([ADR 0007](../decisions/0007-process-topology-doca-deferral.md)):
+the **ORU process** already de-frames Spec B sections into the host buffer
+`x_dl_host[C][rank][numSc]` (`ci16`, [Spec F](oru-interface-contract.md)). ORCA `cudaMemcpyAsync`
+H2D-copies it to a GPU staging slot `x_dl_raw` (`ci16`); **K0 is a flat convert** —
+`x_dl[c][l][sc] = toCf32(x_dl_raw[c][l][sc])` (no scatter; the section layout was done host-side).
 
-- **Input:** staging payloads (`ci16`) + `d_sections[]` `{srcOff, cell, layer, scStart, count}`.
-- **Output:** `x_dl[C][rank][numSc]` cf32.
-- **Grid:** static `(MAX_SECTIONS, ceil(maxSecLen/256))`; block reads its section, idle blocks
-  return. Thread `k`→element: `x_dl[cell][layer][scStart+k] = toCf32(payload[srcOff+k])`.
-- **Coalesced:** consecutive `k` = consecutive `sc` → contiguous `ci16` read (4 B) and `cf32`
-  write (8 B). (With CPU-controlled DOCA, K0 can be folded into the graph head, or done by the
-  ingest thread before launch — Phase-1 default: a graph node.)
+- **Input:** `x_dl_raw[C][rank][numSc]` ci16 (H2D-staged). **Output:** `x_dl[C][rank][numSc]` cf32.
+- **Grid:** static, flat over `C·rank·numSc` elements (sc innermost); thread per element →
+  coalesced `ci16` read (4 B) / `cf32` write (8 B).
+- *(When DOCA returns — deferred-goals — the NIC DMAs straight to GPU and K0 reabsorbs the
+  per-section scatter; the host H2D disappears.)*
 
 ### K5 — cf32 → ci16 pack (egress to vDU)
 
-Inverse of K0: `z[c][l][sc]` cf32 → `ci16` (saturating round, scale per Spec B `udCompParam`),
-scattered into DOCA TX section payloads per the Spec B header layout (eAxC = `{cell,layer}`,
-PRB ranges). Same static-grid / per-section pattern. BFP packing is deferred (Spec B.4).
+Inverse of K0: `z[c][l][sc]` cf32 → `z_host_dev[C][rank][numSc]` `ci16` (saturating round,
+scale per Spec B `udCompParam`), flat per-element, sc-innermost → coalesced. ORCA then D2H-copies
+`z_host_dev` → host `ulOutRing` ([Spec F](oru-interface-contract.md)); the **ORU process**
+packetizes it per Spec B (eAxC `{cell,layer}`, PRB ranges) and sends to the vDU (DOCA deferred,
+ADR 0007). BFP packing is deferred (Spec B.4).
 
 ### Noise (AWGN) — used inside K2/K3
 

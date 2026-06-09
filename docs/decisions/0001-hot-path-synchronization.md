@@ -53,7 +53,10 @@ Adopt a **CUDA Graph hot path with CPU-controlled DOCA GPUNetIO** and
    graph; replay with a single `cudaGraphLaunch` (~1–2 µs) per symbol. Inter-stage
    ordering is expressed as **graph node dependencies** — no flags, no fences.
 
-2. **CPU-controlled DOCA GPUNetIO.** The NIC DMAs packets directly into GPU memory
+2. **CPU-controlled DOCA GPUNetIO.** *(Update — [ADR 0007](0007-process-topology-doca-deferral.md):
+   **DOCA/GPUDirect is deferred**; Phase-1 north ingress is host-staged via a separate ORU
+   process + host shm + H2D (Spec F). The graph/sync model in this ADR is unchanged — only the
+   ingress mechanism differs.)* The NIC DMAs packets directly into GPU memory
    (GPUDirect RDMA — zero copy preserved). The **host** observes receive
    completions, tracks reassembly via the per-symbol coverage bitmap
    (`orchestr/symbol_ring.hpp`), and at "coverage complete OR deadline" issues the

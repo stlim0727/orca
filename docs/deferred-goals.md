@@ -24,6 +24,7 @@ FP16**, µ=1, vUE in-box (GPU PHY, CUDA-IPC), CUDA-Graph hot path on a single PC
 | 8 | [v2 streaming reassembly](#v2-reassembly) | later | scheduler change only | none on the wire |
 | 9 | [Continuous (non-grid) mobility](#continuous-mobility) | later | live ray tracing / fine interp | grid quantization now |
 | 10 | [Implementation deferrals](#impl-deferrals) | at impl time | per item | bit-exactness / config polish |
+| 11 | [DOCA / GPUDirect (zero-copy NIC→GPU)](#doca) | when north volume grows | DOCA GPUNetIO backend | host-staged H2D copy until then |
 
 ---
 
@@ -185,6 +186,27 @@ small index on the wire + a gather, vs estimation + matrix solve).
   refine in Spec B C-plane.
 
 **Refs:** Spec B, ADR 0005.
+
+## DOCA / GPUDirect (zero-copy NIC→GPU)
+<a id="doca"></a>
+
+**Status:** deferred ([ADR 0007](decisions/0007-process-topology-doca-deferral.md)). Phase-1
+north ingress is **host-staged**: ORU process → host shm → ORCA H2D ([Spec F](specs/oru-interface-contract.md)).
+
+**Why deferred.** The vDU-side volume is **layer-domain** IQ (~3 GB/s SU 2-cell), so a
+host-staged H2D/D2H copy (~1 µs/symbol) is fine; GPUDirect's zero-copy is only needed when
+the NIC↔GPU volume is large.
+
+**Considerations / compromises when re-enabling:**
+- Adds the **DOCA GPUNetIO + GPUDirect RDMA** dependency; the ORU process either does
+  GPUDirect RX/TX or merges into ORCA.
+- Implemented as the **`OruTransport` DOCA backend** (Spec F §F.8) — NIC DMAs Spec B
+  payloads straight to GPU; the H2D/D2H copies vanish.
+- **Needed when north volume grows:** MU-MIMO (16 layers/cell), many cells, more layers, or
+  full-band → H2D approaches PCIe / the budget.
+- This restores ADR 0001's original "CPU-controlled DOCA" ingress.
+
+**Refs:** ADR 0007, ADR 0001, Spec F.
 
 ---
 

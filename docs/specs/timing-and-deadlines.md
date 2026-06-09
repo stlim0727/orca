@@ -139,8 +139,9 @@ Never block the pipeline waiting for a late symbol.
 - Per-slot lifecycle: `Free → Filling → Ready → Computing → Egressing → Free`.
 
 > **Synchronization note.** Per ADR 0001, the hot path is a **CUDA Graph**
-> (CPU-controlled DOCA), so slot hand-off uses **stream ordering + one event per
-> symbol**, not persistent-kernel doorbells or system-scope flags. The ring and
+> (host-staged ingress in Phase 1 — DOCA deferred, ADR 0007), so slot hand-off uses
+> **stream ordering + one event per symbol**, not persistent-kernel doorbells or
+> system-scope flags. The ring and
 > coverage bitmap are orchestration state owned by the host ingest path.
 
 ## A.6 Phased reassembly

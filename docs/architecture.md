@@ -9,22 +9,25 @@ removed after we locked the design (see commit history / ADR 0001).
 applies a ray-traced channel in real time, and performs precoding / receive-combining **on
 behalf of the radio unit**.
 
-**Role & interfaces**
+**Three in-box processes** ([ADR 0007](decisions/0007-process-topology-doca-deferral.md)):
+`ORU process ↔ ORCA ↔ vUE`. ORCA holds the GPU; it never touches Ethernet.
 
-- **North — vDU side:** vDU ↔ ORCA over the **ORU fronthaul packet format**
-  (Spec B). ORCA **is** the O-RU here — it covers the **RU role** (fronthaul
-  termination + precoding/combining on behalf of the RU). Transport: DOCA GPUNetIO +
-  GPUDirect RDMA. This is the only NIC-crossing interface.
-- **South — vUE side:** ORCA ↔ in-box **vUE** over **DPDK shared memory**
-  (control + handles); bulk per-antenna IQ stays in HBM, shared via CUDA IPC
-  ([ADR 0004](decisions/0004-vue-interface-ipc.md)).
+- **North — vDU side:** a **separate ORU process** terminates the **ORU fronthaul packet
+  format** (Spec B) over Ethernet (**DOCA deferred** — NIC via kernel/DPDK) and relays
+  de-framed **layer IQ** to ORCA over **host shared memory + H2D copy**
+  ([Spec F](specs/oru-interface-contract.md)). ORCA covers the **RU role** (precoding/
+  combining on behalf of the RU). The vDU-side volume is small (~3 GB/s SU 2-cell), so the
+  host-staged copy (~1 µs/sym) suffices — hence DOCA can be deferred.
+- **South — vUE side:** ORCA ↔ in-box **vUE** over **DPDK shared memory** (control +
+  handles); bulk **per-antenna** IQ (~160 GB/s) stays in HBM, shared via **CUDA IPC**
+  ([ADR 0004](decisions/0004-vue-interface-ipc.md) / [Spec D](specs/vue-interface-contract.md)).
 
 ## Requirements (locked)
 
 | Dimension | Decision |
 |---|---|
 | Fronthaul | **Custom packet format** (real vDU on the network side, custom framing). See [Spec B](specs/fronthaul-packet-format.md). |
-| GPU / ingress | **NVIDIA datacenter (e.g. H100) + DOCA GPUNetIO + GPUDirect RDMA**, zero-copy packet→GPU. |
+| GPU / ingress | **NVIDIA datacenter (e.g. H100).** Phase 1: **host-staged** north ingress — separate **ORU process** (NIC via kernel/DPDK) → host shm → **H2D** (Spec F). **DOCA GPUNetIO + GPUDirect deferred** ([ADR 0007](decisions/0007-process-topology-doca-deferral.md), [deferred-goals](deferred-goals.md#doca)). |
 | Scale | **Massive MIMO, 32–64+ TRX** (default 64T). |
 | Spatial multiplexing | **Phase 1 = SU-MIMO** (one UE per time-frequency resource; OFDMA scheduling; per-resource layers = UE rank ≤4). **MU-MIMO deferred** (16× `H`-read blow-up → needs Spec C). See [ADR 0005](decisions/0005-su-mimo-phase1.md), [deferred-goals](deferred-goals.md#mu-mimo). |
 | Channel | **Ray-traced**, with **slow CIR update + per-symbol apply** (heavy ray tracing decoupled from the hot path). |
@@ -43,12 +46,12 @@ behalf of the radio unit**.
 ## Topology & data flow
 
 ```
-              ORU fronthaul pkt fmt              ORCA                   DPDK shared mem
-  ┌──────────┐   (ORCA = O-RU)           ┌──────────────────────┐    (bulk in HBM      ┌──────────┐
-  │ Real vDU │◄── DOCA GPUNetIO/RDMA ────►│  precode → channel    │◄──  via CUDA IPC) ──►│   vUE    │
-  │ (3rd pty)│      DL: PDSCH IQ         │  → combine            │                      │ (N UEs)  │
-  └──────────┘      UL: PUSCH/SRS IQ     │  ⇒ covers O-RU/RU role │                      └──────────┘
-                                         └──────────────────────┘
+            Ethernet (Spec B)        host shm + DPDK         ORCA (GPU)        DPDK + CUDA IPC
+  ┌──────────┐              ┌─────────────┐  H2D/D2H  ┌──────────────────┐   (HBM bulk)  ┌──────────┐
+  │ Real vDU │◄────────────►│ ORU process │◄─(Spec F)►│ precode → channel │◄──(Spec D)──►│   vUE    │
+  │ (3rd pty)│  DL/UL IQ    │ NIC+framing │           │ → combine         │              │ (N UEs)  │
+  └──────────┘              └─────────────┘           │ ⇒ O-RU/RU role    │              └──────────┘
+                          (DOCA deferred)             └──────────────────┘
 ```
 
 - **DL:** vDU(s) → per-cell precode (per-PRB-group W) → channel-apply summed over each
@@ -195,7 +198,7 @@ decision and rationale. Summary:
 | `channel/` | offline CIR-table generator (ray tracer) + grid lookup, CIR→H FFT, indirection-cell double buffer |
 | `estim/` | SRS channel estimation + weight computation (cuSOLVER) — **deferred (ADR 0006)**, dormant in Phase 1 |
 | `scenario/` | cells, UE grid + mobility, serving-cell/interferer association, contribution lists, **resident beam codebook** (ADR 0006) |
-| `oru/` | vDU-facing endpoint, per-cell custom-fronthaul flow sets (NIC) |
+| `oru/` | `OruTransport` (host-shm + H2D/D2H, Spec F) inside ORCA + handshake. The **ORU process** (NIC + Spec B framing) is a *separate program* (ADR 0007), not part of ORCA. |
 | `vue/` | UE-facing endpoint + `VueTransport` (Phase-1 CUDA-IPC / Phase-2 DPDK-over-NVLink backends), ADR 0004 |
 | `app/` | wiring, graph capture/launch, per-symbol event-gated egress |
 | `tests/` | golden-model bit-exactness, loopback, jitter harness |

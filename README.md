@@ -7,23 +7,23 @@ frequency-domain IQ in real time, and performs precoding / receive-combining **o
 the RU**.
 
 ```
-              ORU fronthaul pkt format         ORCA            DPDK shared mem
-  ┌──────────┐  (ORCA = O-RU)  ┌──────────────────────────┐   (bulk in HBM
-  │ Real vDU │◄── DOCA GPUNetIO / RDMA ──►│  precode → channel-apply  │◄── via CUDA IPC) ─►┌──────────┐
-  │ (3rd pty)│    DL: PDSCH IQ            │  → combine   (per symbol) │                    │   vUE    │
-  │ per cell │    UL: PUSCH/SRS IQ        │  ⇒ covers the O-RU/RU role │                    │ (N UEs)  │
-  └──────────┘                            └──────────────────────────┘                    └──────────┘
+            Ethernet (Spec B)        host shm + DPDK         ORCA (GPU)        DPDK + CUDA IPC
+  ┌──────────┐              ┌─────────────┐  H2D/D2H  ┌──────────────────┐  (HBM bulk)  ┌──────────┐
+  │ Real vDU │◄────────────►│ ORU process │◄─(Spec F)►│ precode → channel │◄──(Spec D)──►│   vUE    │
+  │ (3rd pty)│  DL/UL IQ    │ NIC+framing │           │ → combine         │             │ (N UEs)  │
+  └──────────┘              └─────────────┘           │ ⇒ O-RU/RU role    │             └──────────┘
+                          (DOCA deferred)             └──────────────────┘
 ```
 
-**Role & interfaces**
+**Role & interfaces** — three in-box processes ([ADR 0007](docs/decisions/0007-process-topology-doca-deferral.md)):
 
-- **North (vDU side):** the vDU speaks the **ORU fronthaul packet format** (Spec B) to
-  ORCA — ORCA **is** the O-RU here, covering the RU role (fronthaul
-  termination + precoding/combining on behalf of the RU). Transport: DOCA GPUNetIO +
-  GPUDirect RDMA.
-- **South (vUE side):** ORCA exchanges per-UE IQ with the in-box **vUE** over
-  **DPDK shared memory** (control + handles; bulk per-antenna IQ stays in HBM, shared via
-  CUDA IPC — ADR 0004).
+- **North (vDU side):** a **separate ORU process** terminates the **ORU fronthaul packet
+  format** (Spec B) over Ethernet (**DOCA deferred**; NIC via kernel/DPDK) and relays
+  de-framed layer IQ to ORCA over **host shared memory + H2D** (Spec F). ORCA covers the
+  **RU role** (precoding/combining on behalf of the RU) and never sees Ethernet.
+- **South (vUE side):** ORCA exchanges per-antenna IQ with the in-box **vUE** over
+  **DPDK shared memory** (control + handles; bulk stays in HBM, shared via CUDA IPC —
+  ADR 0004 / Spec D).
 
 - **DL:** vDU → precode (`64 × rank` per resource) → channel-apply, summed over each UE's
   serving cell **+ interferers** (cross-link `H`) → +noise → vUE.
@@ -59,7 +59,8 @@ costs to bring back are tracked in [`docs/deferred-goals.md`](docs/deferred-goal
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | **Source of truth.** Locked requirements, topology, spatial dimensions, multi-cell/interference/mobility, module structure, open risks. |
 | [`docs/specs/timing-and-deadlines.md`](docs/specs/timing-and-deadlines.md) | **Spec A** — per-symbol air-time, the two budgets (throughput vs latency), drop policy, reassembly ring. |
-| [`docs/specs/fronthaul-packet-format.md`](docs/specs/fronthaul-packet-format.md) | **Spec B** — ORU fronthaul wire format (north/vDU): 20-byte header, eAxC, multi-cell addressing, U/C/S-plane. |
+| [`docs/specs/fronthaul-packet-format.md`](docs/specs/fronthaul-packet-format.md) | **Spec B** — ORU fronthaul wire format (vDU↔ORU): 20-byte header, eAxC, multi-cell addressing, U/C/S-plane. |
+| [`docs/specs/oru-interface-contract.md`](docs/specs/oru-interface-contract.md) | **Spec F** — ORU↔ORCA interface (north): host shm bulk + H2D/D2H, DPDK control, allocation/beam map (DOCA deferred). |
 | [`docs/specs/vue-interface-contract.md`](docs/specs/vue-interface-contract.md) | **Spec D** — in-box vUE interface (south): shared HBM via CUDA IPC, DPDK shm control ring, bring-up handshake, per-symbol protocol. |
 | [`docs/specs/gpu-kernel-design.md`](docs/specs/gpu-kernel-design.md) | **Spec E** — GPU kernel & memory design: tensor layouts, allocation, the 6 hot-path kernels (grid/block/warp/thread, coalescing, occupancy). |
 | [`docs/decisions/0001-hot-path-synchronization.md`](docs/decisions/0001-hot-path-synchronization.md) | **ADR 0001** — CUDA Graph + CPU-controlled DOCA + indirection-cell double buffering (not persistent kernels). |
@@ -68,6 +69,7 @@ costs to bring back are tracked in [`docs/deferred-goals.md`](docs/deferred-goal
 | [`docs/decisions/0004-vue-interface-ipc.md`](docs/decisions/0004-vue-interface-ipc.md) | **ADR 0004** — vUE IPC: CUDA IPC (HBM) + DPDK shm control now; CPU PHY over NVLink later. |
 | [`docs/decisions/0005-su-mimo-phase1.md`](docs/decisions/0005-su-mimo-phase1.md) | **ADR 0005** — SU-MIMO for Phase 1; MU-MIMO deferred (the 16× bandwidth reason). |
 | [`docs/decisions/0006-beam-indexed-precoding.md`](docs/decisions/0006-beam-indexed-precoding.md) | **ADR 0006** — beam-indexed precoding (resident codebook, `beam_id` from vDU); SRS deferred. |
+| [`docs/decisions/0007-process-topology-doca-deferral.md`](docs/decisions/0007-process-topology-doca-deferral.md) | **ADR 0007** — three-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north ingress. |
 | [`docs/deferred-goals.md`](docs/deferred-goals.md) | Register of deferred capabilities + the compromises/enabling work to re-enable each. |
 | [`docs/MILESTONES.md`](docs/MILESTONES.md) | Stage-by-stage implementation plan and hot-path invariants. |
 
@@ -78,8 +80,10 @@ costs to bring back are tracked in [`docs/deferred-goals.md`](docs/deferred-goal
   within `L_max` (~70 µs working, < real fronthaul tolerance). `T_proc ≤ 3 µs` is retired.
 - **CUDA Graph hot path** — capture `gather → precode → channel → combine → pack` once,
   replay per symbol with one `cudaGraphLaunch`; no persistent kernels at µ=1 (ADR 0001).
-- **DOCA GPUNetIO + GPUDirect RDMA** — zero-copy packet → GPU memory on the **vDU side**
-  (the only NIC-crossing side).
+- **Three in-box processes, DOCA deferred** (ADR 0007) — a separate **ORU process** owns
+  the NIC + Spec B framing and relays layer IQ to ORCA over **host shm + H2D** (Spec F);
+  small vDU-side volume (~3 GB/s) makes zero-copy GPUDirect unnecessary for now. Re-enabling
+  **DOCA GPUNetIO + GPUDirect** is a later-phase `OruTransport` backend swap.
 - **vUE is in-box, GPU-resident** (ADR 0004) — bulk per-antenna IQ stays in HBM, shared
   across processes via **CUDA IPC**; **DPDK shared memory** carries the control plane.
   Phase 2 (later): CPU PHY on Grace-Hopper over NVLink-C2C.

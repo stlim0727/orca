@@ -5,7 +5,7 @@ lives in per the [intended structure](architecture.md#intended-module-structure-
 
 | Stage | Goal | Module(s) |
 |---|---|---|
-| **1** | **Loopback, no channel (identity transform).** *North:* vDU ↔ ORCA over the **ORU fronthaul packet format** (Spec B) — ORCA plays the **O-RU/RU role** and terminates the fronthaul; DOCA GPUNetIO/GPUDirect path proven. *South:* ORCA ↔ vUE over **DPDK shared memory** (control + handles; bulk IQ in HBM via CUDA IPC, ADR 0004 / **Spec D**). Per-symbol jitter measured. | `fh/`, `oru/` (= RU termination), `vue/`, `orchestr/`, `app/` |
+| **1** | **Loopback, no channel (identity transform).** *North:* vDU ↔ **ORU process** (Ethernet, Spec B; **DOCA deferred** — kernel/DPDK) ↔ ORCA over **host shm + H2D/D2H** (**Spec F**). *South:* ORCA ↔ vUE over **DPDK shared memory** + bulk in HBM via **CUDA IPC** (ADR 0004 / **Spec D**). ORCA covers the O-RU/RU role; per-symbol jitter measured. | ORU process (sep. program), `oru/` (`OruTransport`), `vue/`, `orchestr/`, `app/` |
 | **2** | DL precode via **resident beam codebook**, `beam_id` from the vDU C-plane (ADR 0006) + AWGN; validate vs CPU golden. | `scenario/` (codebook), `dsp/` (precode) |
 | **3** | Static multipath channel apply (single CIR) + Doppler rotor. | `channel/`, `dsp/` (channel-apply) |
 | **4** | Slow ray tracer / trace replay feeding the indirection-cell double buffer. | `channel/` |

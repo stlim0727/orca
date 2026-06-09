@@ -2,11 +2,13 @@
 
 **Status:** Settled design (source of truth). No implementation yet.
 
-This is the **ORU fronthaul packet format** spoken on the **north (vDU) interface** of
-**ORCA**. ORCA terminates it **as the O-RU** — i.e. it covers the
-RU role (fronthaul termination + precoding/combining on behalf of the RU). It is the only
-NIC-crossing interface; the **south (vUE) interface uses DPDK shared memory**, not this
-format (ADR 0004).
+This is the **ORU fronthaul packet format** on the **vDU↔ORU wire** (north). Per
+[ADR 0007](../decisions/0007-process-topology-doca-deferral.md), a **separate ORU process**
+terminates this format over Ethernet (**DOCA deferred**) and relays de-framed IQ + the
+allocation/beam map to ORCA over host shared memory ([Spec F](oru-interface-contract.md)).
+ORCA covers the **O-RU/RU role** (precoding/combining on behalf of the RU) but never sees
+Ethernet. The south (vUE) interface uses its own IPC ([Spec D](vue-interface-contract.md)),
+not this format.
 
 The format carries **frequency-domain IQ** (7.2x-style, custom framing) between the vDU
 and ORCA. Carrying frequency-domain IQ keeps FFT/iFFT off the hot path; the
