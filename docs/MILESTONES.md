@@ -5,7 +5,7 @@ lives in per the [intended structure](architecture.md#intended-module-structure-
 
 | Stage | Goal | Module(s) |
 |---|---|---|
-| **1** | **Loopback, no channel (identity transform).** *North:* vDU ↔ ORCA over the **ORU fronthaul packet format** (Spec B) — ORCA plays the **O-RU/RU role** and terminates the fronthaul; DOCA GPUNetIO/GPUDirect path proven. *South:* ORCA ↔ vUE over **DPDK shared memory** (control + handles; bulk IQ in HBM via CUDA IPC, ADR 0004). Per-symbol jitter measured. | `fh/`, `oru/` (= RU termination), `vue/`, `orchestr/`, `app/` |
+| **1** | **Loopback, no channel (identity transform).** *North:* vDU ↔ ORCA over the **ORU fronthaul packet format** (Spec B) — ORCA plays the **O-RU/RU role** and terminates the fronthaul; DOCA GPUNetIO/GPUDirect path proven. *South:* ORCA ↔ vUE over **DPDK shared memory** (control + handles; bulk IQ in HBM via CUDA IPC, ADR 0004 / **Spec D**). Per-symbol jitter measured. | `fh/`, `oru/` (= RU termination), `vue/`, `orchestr/`, `app/` |
 | **2** | DL precode via **resident beam codebook**, `beam_id` from the vDU C-plane (ADR 0006) + AWGN; validate vs CPU golden. | `scenario/` (codebook), `dsp/` (precode) |
 | **3** | Static multipath channel apply (single CIR) + Doppler rotor. | `channel/`, `dsp/` (channel-apply) |
 | **4** | Slow ray tracer / trace replay feeding the indirection-cell double buffer. | `channel/` |
@@ -39,6 +39,11 @@ Per [ADR 0001](decisions/0001-hot-path-synchronization.md):
   all-to-all) updates a link list, not the kernels or graph. The captured graph is
   sized for the configured **max** contributor count; instantaneous handover changes
   stay within that bound. (ADR 0002 §3, §6)
+- **Static kernel grids (graph-replayable).** A captured graph bakes `gridDim`, but
+  scheduling (`numAllocs`, `scLen`, `numSections`) varies per symbol → every hot kernel
+  uses a **static, worst-case grid** with runtime guards + per-`sc` lookup tables
+  (`d_victim`, `d_allocs`). Per symbol the host updates device tables only, never grid
+  dims. (Spec E §E.8)
 
 ## Phased reassembly
 

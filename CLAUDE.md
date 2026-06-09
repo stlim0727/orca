@@ -17,7 +17,9 @@ the source of truth** — read them before proposing anything:
 - @README.md — entry point, key design points, intended build.
 - @docs/architecture.md — settled requirements, topology, spatial dimensions, multi-cell.
 - @docs/specs/timing-and-deadlines.md — Spec A: per-symbol timing & deadline budget.
-- @docs/specs/fronthaul-packet-format.md — Spec B: custom wire format, eAxC, multi-cell addressing.
+- @docs/specs/fronthaul-packet-format.md — Spec B: ORU fronthaul wire format (north/vDU), eAxC, multi-cell addressing.
+- @docs/specs/vue-interface-contract.md — Spec D: in-box vUE interface (south) — CUDA IPC bulk + DPDK shm control, handshake, per-symbol protocol.
+- @docs/specs/gpu-kernel-design.md — Spec E: GPU kernels & memory — tensor layouts, allocation, K0–K5 grid/block/thread maps, coalescing, occupancy.
 - @docs/decisions/0001-hot-path-synchronization.md — ADR 0001: CUDA Graph + CPU-controlled DOCA + indirection cell.
 - @docs/decisions/0002-multi-cell-interference-mobility.md — ADR 0002: multi-cell, interference, mobility.
 - @docs/decisions/0003-throughput-latency-pipeline.md — ADR 0003: throughput/latency decoupling, symbol pipeline, vUE in-box.
@@ -91,8 +93,9 @@ the source of truth** — read them before proposing anything:
    method, storage format, and how the OptiX tracer populates per-(cell, grid-point) CIR.
    Named in ADR 0002 §5 but unspecified.
 
-3. **UL combiner detail** — `C` is `numLayers × numTx` (16×64) per PRB-group, conjugate-
-   transpose shape of `W`; MMSE vs MRC selection and SRS→C path (Stage 5).
+3. **UL combiner** — ✅ resolved by **ADR 0006**: combine = `beam_id` codebook gather
+   (`64 → rank`), symmetric with DL precode. SRS-derived MMSE/MRC weights are **deferred**
+   (deferred-goals #7).
 
 4. **Deferred at implementation time:** BFP exponent/scaling for bit-exactness (Spec B.4),
    telemetry wire format (Spec B.7), YAML config loader.

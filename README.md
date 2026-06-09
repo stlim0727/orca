@@ -59,7 +59,9 @@ costs to bring back are tracked in [`docs/deferred-goals.md`](docs/deferred-goal
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | **Source of truth.** Locked requirements, topology, spatial dimensions, multi-cell/interference/mobility, module structure, open risks. |
 | [`docs/specs/timing-and-deadlines.md`](docs/specs/timing-and-deadlines.md) | **Spec A** — per-symbol air-time, the two budgets (throughput vs latency), drop policy, reassembly ring. |
-| [`docs/specs/fronthaul-packet-format.md`](docs/specs/fronthaul-packet-format.md) | **Spec B** — custom fronthaul wire format: 20-byte header, eAxC, multi-cell addressing, U/C/S-plane. |
+| [`docs/specs/fronthaul-packet-format.md`](docs/specs/fronthaul-packet-format.md) | **Spec B** — ORU fronthaul wire format (north/vDU): 20-byte header, eAxC, multi-cell addressing, U/C/S-plane. |
+| [`docs/specs/vue-interface-contract.md`](docs/specs/vue-interface-contract.md) | **Spec D** — in-box vUE interface (south): shared HBM via CUDA IPC, DPDK shm control ring, bring-up handshake, per-symbol protocol. |
+| [`docs/specs/gpu-kernel-design.md`](docs/specs/gpu-kernel-design.md) | **Spec E** — GPU kernel & memory design: tensor layouts, allocation, the 6 hot-path kernels (grid/block/warp/thread, coalescing, occupancy). |
 | [`docs/decisions/0001-hot-path-synchronization.md`](docs/decisions/0001-hot-path-synchronization.md) | **ADR 0001** — CUDA Graph + CPU-controlled DOCA + indirection-cell double buffering (not persistent kernels). |
 | [`docs/decisions/0002-multi-cell-interference-mobility.md`](docs/decisions/0002-multi-cell-interference-mobility.md) | **ADR 0002** — multi-cell on one box, cross-link interference, grid mobility, the `H`-bandwidth roofline. |
 | [`docs/decisions/0003-throughput-latency-pipeline.md`](docs/decisions/0003-throughput-latency-pipeline.md) | **ADR 0003** — throughput vs latency decoupling, the symbol pipeline, vUE in-box. |

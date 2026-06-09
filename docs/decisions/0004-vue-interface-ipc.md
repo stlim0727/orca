@@ -91,7 +91,11 @@ Grace-Hopper are adopted together.
   would be the multi-box phase, ADR 0003 §6).
 
 ## Open (implementation-time)
-- Control-ring schema and the exact CUDA IPC mem/event-handle bring-up handshake.
+
+> **Now fully specified in [Spec D — vUE interface contract](../specs/vue-interface-contract.md)**
+> (buffer layout, control-ring schema, handshake, per-symbol protocol, sync rules).
+
+- ~~Control-ring schema and the exact CUDA IPC mem/event-handle bring-up handshake.~~ → Spec D.
 - Whether to use DPDK shm or POSIX shm + eventfd for the **Phase-1 control plane**
   (lean DPDK if the vUE is already a DPDK app, since it also pre-stages the Phase-2 path;
   otherwise POSIX shm is lighter). Default: **DPDK shm**, per the project's stated choice.
