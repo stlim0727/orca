@@ -46,6 +46,10 @@ makes the dominant `H` and `y` reads **coalesced**. Every layout below obeys thi
 
 ## E.2 GPU memory layout & allocation
 
+> Shapes below are **logical**. The implementation-accurate form — flat 1-D arrays, the
+> `numScP` (=3296) alignment padding on `sc`, exact index macros, and the
+> `threadIdx.x→sc` mapping that *forces* `sc`-innermost — is in **[§E.11](#e11-exact-array-layouts-strides--the-layoutdecomposition-coupling)**.
+
 ### Resident buffers (slow-plane owned; double-buffered via the ADR 0001 indirection cell)
 
 | Buffer | Shape (row-major, `sc` innermost) | Elem | Size (Phase 1) |
@@ -161,8 +165,8 @@ The `Σ_{c'}` is the all-to-all interference sum (serving `c'=c` + interferer). 
 |---|---|
 | **Input** | `H_active[C][U][numRx][numTx][numSc]` half2; `y[C][numTx][numSc]` cf32; `doppler`; `d_victim` |
 | **Output** | `r_dl[U][numRx][numSc]` cf32 |
-| **Grid** | `gridDim = (C, numRx, ceil(numSc/TILE))` → 2·4·⌈3276/256⌉ = 2·4·13 = **104 blocks** |
-| **Block** | `TILE = 256` threads, one per `sc` |
+| **Grid** | default `(C, ⌈numScP/256⌉, SPLITK)` = `(2, 13, 16)` = **416 blocks** (variant (a) + split-K, E.12); `rx` in-thread |
+| **Block** | `TILE = 256` threads, one per `sc` (lane = `sc`) |
 
 **Thread/warp map (thread `t` = one `sc`, fixed `(c, rx)` from `blockIdx`):**
 ```
@@ -194,15 +198,16 @@ boundaries).
   Costs 4 accumulators/thread. **Recommended.**
 - **(b) keep `rx` in the grid** (above): simpler, more blocks (better occupancy), more `y` reads.
 
-Phase-1 default: **(a)** — `gridDim=(C, ceil(numSc/256))=2·13=26 blocks`, each thread does 4
-`rx`. If profiling shows HBM under-saturated (too few blocks → 26 is low for 132 SMs), apply
-**split-K over `tx`**: add a `gridDim.w = numTx/16` axis, each block sums a 16-`tx` slice into
-a partial, then a tiny reduce kernel (or `atomicAdd` on cf32 via 2×float) finalizes — raises
-block count ~4× and recovers occupancy. (The kernel is ~4 µs at HBM peak; the budget is the
-full `T_sym` on the throughput clock, so even 2–3× off-peak is fine — measure first.)
+**Phase-1 default: variant (a) + split-K over `tx` (`SPLITK≈16`)** — `gridDim=(C,
+ceil(numScP/256), SPLITK)` = `(2, 13, 16)` = **416 blocks**, each thread does 4 `rx` and a
+`64/SPLITK`-tx slice; a tiny reduce (or `atomicAdd` 2×float) finalizes partials. Split-K is
+**required, not optional** for the cold symbol: without it the 26-block launch under-saturates
+HBM (~320 GB/s) and K2 takes ~63 µs ≫ `T_sym`; with it, ~7 µs cold / ~2 µs steady. Full
+derivation: [§E.12](#e12-worked-example--k2-coalescing--occupancy-the-numbers).
 
-**Bandwidth check:** `H` 13.4 MB + `y` ~0.84 MB (with reuse) + `r_dl` 3.35 MB write ≈ 17.6
-MB/symbol → ~0.49 TB/s, ~15 % of HBM. Comfortable.
+**Bandwidth & occupancy:** ~20.3 MB/symbol cold (`H` 13.4 + `y` 6.7 + write 0.2). This is
+*not* automatically "comfortable" — the naive 26-block launch under-saturates HBM and blows
+`T_sym`. See the worked numbers and the required **split-K** fix in **[§E.12](#e12-worked-example--k2-coalescing--occupancy-the-numbers)**.
 
 ---
 
@@ -316,14 +321,15 @@ worst-case bound, and guards at runtime:
 - Per-symbol the host updates only **device scalars/tables** (`numAllocs`, `d_allocs`,
   `d_victim`, …) — never grid dims — so the same graph replays every symbol.
 
-**Occupancy / HBM saturation (the bandwidth-bound K2/K3 matter most).** 13.4 MB at HBM peak ≈
-4 µs; saturating 3.35 TB/s needs many resident warps. Block counts: K2(a) 26, K2(b)/UL 104–208,
-K1/K4 ≤ MAX_ALLOCS. If profiling shows HBM under-saturated:
-- **Split-K over `tx`** (K2) / over `rx` (K3): add a reduction axis (16-wide slices) → ~4×
-  blocks, finalize with a tiny reduce (or 2×`float` `atomicAdd`).
-- Prefer K2 **variant (b)** (rx in grid) for raw block count, or **(a)** (rx in block) for less
-  `y` traffic — measure both. Budget is the full `T_sym` (throughput clock), so even 2–3× off
-  peak closes; tune only if measured.
+**Occupancy / HBM saturation (the bandwidth-bound K2/K3 matter most).** The trap: too **few
+blocks** (not registers, not coalescing) leaves HBM under-saturated and blows `T_sym` — the
+naive K2 launch is 26 blocks → ~63 µs (worked out in [§E.12](#e12-worked-example--k2-coalescing--occupancy-the-numbers)).
+**Resolution — split-K is part of the default, not a tuning afterthought:**
+- **K2:** variant (a) + **split-K over `tx` (`SPLITK≈16`)** → ~416 blocks, ~7 µs cold, ~2 µs
+  steady (L2). **K3:** same idea, split-K over the 64 `rx_ru`.
+- Finalize partials with a tiny reduce or 2×`float` `atomicAdd`.
+- Steady-state both kernels are **L2-bound** (working set < 50 MB) → far under budget; the
+  cold (post-swap / schedule-change) symbol governs the deadline.
 
 **Memory/vectorization:** load `H` as `half2` (4 B/thread, warp = 128 B, 1 transaction); `y`/`r`
 as `float2` (cf32). Codebooks gathered to **shared** per block (or `__ldg`/constant — they're
@@ -334,13 +340,262 @@ as `float2` (cf32). Codebooks gathered to **shared** per block (or `__ldg`/const
 - ~~`numUeTx` confirmation~~ → **`numUeTx = 2`, `numRx = 4`** (also fixes Spec D UL slot size).
 - `MAX_ALLOCS` / `MAX_SECTIONS` worst-case sizing vs the FH scheduler.
 - K0 as a graph node vs ingest-thread pre-step (CPU-controlled DOCA).
-- Split-K threshold — gate on measured HBM utilization on the target H100.
+- Split-K factor — `SPLITK≈16` derived for K2 (E.12); confirm on the actual H100 and for K3.
 - `ueTxToRx[2]` element mapping (default `{0,1}`) — confirm against the UE antenna config.
 
 ---
 
-### Status — **complete (steps 1–8).**
-Covers numeric formats, full GPU memory layout & allocation, the CUDA-graph dataflow, and all
-six hot-path kernels (K0–K5) with grid/block/warp/thread maps, coalescing, shared-mem use, and
-launch-config rationale. Open items are tuning/decision points, not gaps. Feeds the `dsp/` and
-`channel/` implementation (MILESTONES Stages 2–7).
+## E.9 Tensor lifecycle, layout & cache behavior
+
+### Notation map (the `y = H·P·x` view ↔ Spec E buffers)
+
+`P` = precode/combine (beam codebook gather), `H` = channel, `x` = layer IQ in.
+
+| Role in `y = H·P·x` (DL) / `y = P·H_h·x` (UL) | DL buffer | UL buffer |
+|---|---|---|
+| `x` — layer IQ in | `x_dl[C][rank][sc]` | `x_ul[U][numUeTx][sc]` |
+| `P` — operator (gathered from codebook by `beam_id`) | `precodeBook` → `W[64][rank]` | `combineBook` → `C[rank][64]` |
+| `H` — channel | `H_dl[C][U][rx][tx][sc]` | `H_dl` transposed (reciprocity, E.6) |
+| **mid** = `P·x` (DL) / `H_h·x` (UL) | `y[C][64][sc]` | `r_ul[C][64][sc]` |
+| `y` — final out | `r_dl[U][rx][sc]` (→vUE) | `z[C][rank][sc]` (→vDU) |
+
+- **DL** applies `P` then `H`:  `x_dl ─K1(P·)→ y ─K2(H·)→ r_dl`.
+- **UL** applies `H_h` then `P`: `x_ul ─K3(H_h·)→ r_ul ─K4(P·)→ z`.
+  (Spec E's `y` is the DL *intermediate* `P·x`, **not** your equation's final `y` = `r_dl`.)
+
+### Lifecycle of each tensor
+
+| Tensor | Created by | Update rate | Read by | Lifetime / residence | Size | Reuse |
+|---|---|---|---|---|---|---|
+| **`H`** | offline CIR table → slow plane fills active HBM buffer | **slow** (few ms / on UE move) | K2, K3 every symbol | whole run; **resident HBM, double-buffered** | 215 MB | **high** (see cache) |
+| **`P`** (codebook) | loaded once at startup | **static** | K1, K4 every symbol (→ shared) | whole run; resident HBM | 512 KB | **high** (tiny, reused over all `sc`) |
+| **`x`** | ingress (K0 / vUE) | **per symbol** | K1 / K3 once | ~`N` symbols in ring, then recycled | 0.1–1.7 MB | none (stream once) |
+| **mid** (`y`/`r_ul`) | K1 / K3 | per symbol | K2 / K4 once | one symbol; ring slot | 3.35 MB | none |
+| **out** (`r_dl`/`z`) | K2 / K4 | per symbol | egress (vUE / K5) once | one symbol; ring slot | 0.2–3.35 MB | none |
+
+### Most cache-friendly layout (the rules, and why)
+
+1. **`sc` innermost on every tensor** → threads tile `sc` → the dominant `H` and the `x/y`
+   streams are **coalesced** (128 B/64 B transactions). (E.1 golden rule.)
+2. **`H` in `half2`** → halves the bottleneck traffic; converted to `cf32` in-register.
+3. **Contraction axes are loops, not thread axes** — `tx` (K2), `rx` (K3/K4) — so the
+   strided access is amortized in registers, never in the coalesced load.
+4. **`P` lives in shared memory** (gathered once per block) — reused across all `sc` of the
+   allocation; never re-streamed from HBM.
+5. **`x`/`y`/out are pure streams** — written once, read once, no temporal reuse → they just
+   need coalescing (rule 1), not caching.
+
+### The cache win on `H` (why SU is comfortable)
+
+Under SU 2-cell the **per-symbol `H` working set is ~13.4 MB**, which **fits H100 L2
+(50 MB)**. Scheduling is stable over many symbols (a UE holds its PRBs for ≥ a slot), so the
+*same* `H[cell][ue][sc]` lines are re-read each symbol → **served from L2, not HBM**.
+Effective HBM `H` traffic → ~0 in steady state; HBM is touched only on a **buffer swap**
+(address changes → L2 refills) or a slow-plane update. So `H` is "read every symbol" but
+**mostly an L2 hit** — the 0.38 TB/s figure is the *cold* worst case, not the steady state.
+
+---
+
+## E.10 Dynamic `H` update
+
+### What actually needs to change, and how fast
+
+| Channel effect | Handled by | Rewrites `H`? | Rate |
+|---|---|---|---|
+| **Doppler / fast phase** within a position | per-symbol **phase rotor** on the fast plane (E.5) | **no** | per symbol, free |
+| **UE grid move** (geometry change) | slow-plane lookup refills affected `(cell,ue)` links | yes (partial) | few ms / on move |
+| **Fast / continuous mobility, time-varying taps** | more frequent slow-plane regeneration | yes | "in case we need it" |
+
+**Key point:** most "dynamic channel" behavior is **Doppler**, which the per-symbol rotor
+applies *without touching `H`*. `H` itself only changes on **geometry** change (position),
+which is slow. So dynamic-`H` rewriting is rarely on the critical path.
+
+### Update mechanism (tear-free, graph-safe — baseline)
+
+Double buffer + indirection cell (ADR 0001 §4):
+1. Slow plane writes the **back** `H` buffer (only the changed `(cell,ue)` links).
+2. Publish = a single **atomic pointer write** to `d_H_active`.
+3. The captured graph reads `const half2* H = *d_H_active;` once per replay → sees one
+   consistent generation (possibly one update stale — the intended slow/fast decoupling).
+No locks, no graph re-capture, no hot-path cost beyond the pointer read.
+
+### Partial-update options (avoid a 215 MB full copy when updates are frequent)
+
+After a swap the back buffer is one generation stale, so incremental updates need care:
+
+| Option | How | Cost | When |
+|---|---|---|---|
+| **A. Delta-to-both** (recommended) | apply each changed link to **both** buffers (back now, the other after swap) | 2× the *sparse* delta writes | mobility (few links/update) |
+| **B. Full copy + deltas + swap** | D2D copy active→back, apply deltas, swap | ~215 MB D2D ≈ 64 µs | simplest; fine at ms rates, not per-symbol |
+| **C. Link-granular double buffer** | double-buffer per link with a generation tag | more bookkeeping | very frequent, sparse |
+
+The `H` update (incl. CIR→`H` FFT for changed links) runs on a **separate slow-plane stream**,
+never competing on the hot path; only the pointer swap is observed by the graph.
+
+### Feasibility: SU tolerates even fully-dynamic `H`
+
+Worst case — `H` changes **every symbol** so there is **no cross-symbol L2 reuse** — the SU
+per-symbol read is still only **~0.38 TB/s (~11 % of HBM)** (ADR 0005). So a fully-dynamic
+channel is **not a feasibility risk under SU**; it is purely the consistency-mechanism choice
+above. (Under MU it would reopen the ADR 0002 §6 wall — another reason MU is deferred.) If a
+future need demands per-symbol *geometry* updates, escalate to **tap-domain** application
+(Spec C) rather than rewriting per-`sc` `H`.
+
+---
+
+## E.11 Exact array layouts, strides & the layout↔decomposition coupling
+
+The logical tensors are **multidimensional**, but each is allocated as a **flat 1-D device
+array + an index macro** (CUDA kernel params can't carry dynamic multidim extents; flat is
+also what makes the stride explicit). The **innermost axis is `sc`** for every hot tensor —
+this is forced, not stylistic (see "the coupling" below).
+
+### Alignment padding
+
+A warp tiles **32 consecutive `sc`**. For each tensor *row* (a fixed choice of all outer
+indices) to start on a 128-byte boundary — so a warp's load is **one** aligned transaction,
+not two straddling a cache line — pad the innermost dimension:
+
+```
+numScP = roundUp(numSc, 32) = roundUp(3276, 32) = 3296      // 20 padding subcarriers
+```
+
+`numScP·sizeof(half2) = 3296·4 = 13184 = 103·128` (aligned); `numScP·sizeof(cf32) = 26368 =
+206·128` (aligned). Kernels **guard `if (sc >= numSc) return;`** — the padding exists only to
+align row starts, never carries data.
+
+### Flat index macros (row-major, `sc` innermost)
+
+With `RANK=4, RX=numRx=4, TX=numTx=64, UETX=numUeTx=2, U, C`:
+
+| Tensor | Element | `idx(...)` into the flat array | Bytes/row |
+|---|---|---|---|
+| `H_dl[c][u][rx][tx][sc]` | half2 | `((((c*U+u)*RX+rx)*TX+tx)*numScP)+sc` | 13184 |
+| `x_dl[c][l][sc]` | cf32 | `((c*RANK+l)*numScP)+sc` | 26368 |
+| `y[c][tx][sc]` (DL mid `P·x`) | cf32 | `((c*TX+tx)*numScP)+sc` | 26368 |
+| `r_dl[u][rx][sc]` (DL out) | cf32 | `((u*RX+rx)*numScP)+sc` | 26368 |
+| `x_ul[u][uetx][sc]` | cf32 | `((u*UETX+uetx)*numScP)+sc` | 26368 |
+| `r_ul[c][rx_ru][sc]` (UL mid `H_h·x`) | cf32 | `((c*TX+rx_ru)*numScP)+sc` | 26368 |
+| `z[c][l][sc]` (UL out) | cf32 | `((c*RANK+l)*numScP)+sc` | 26368 |
+
+**Outer-dim order is free** (chosen for logical clarity); **`sc` innermost is mandatory.**
+
+### The coupling: decomposition ⇒ lane axis ⇒ innermost dimension
+
+A warp's 32 lanes (`threadIdx.x & 31`) must hit 32 **consecutive addresses** to coalesce.
+Whatever tensor axis is mapped to `threadIdx.x` is therefore forced to be the array's
+unit-stride axis. ORCA maps **`threadIdx.x → sc`** in every hot kernel, which is *why* every
+tensor is `sc`-innermost. Concretely (`TILE=256`, 8 warps):
+
+| Kernel | `blockIdx` → | `threadIdx.x` → | per-thread loop |
+|---|---|---|---|
+| K1 precode | `(allocIdx, sc-tile)` | `sc` | `tx` (64), `l` (rank) |
+| K2 channel DL | `(c, sc-tile)` *(rx in-thread)* | `sc` | `c2` (2), `tx` (64), `rx` (4) |
+| K3 channel UL | `(c, rx_ru-tile, sc-tile)` | `sc` | contributor `u`, `uetx` (2) |
+| K4 combine | `(allocIdx, sc-tile)` | `sc` | `rx` (64), `l` (rank) |
+
+Because the lane axis is `sc`, **both the dominant `H`/`y` reads and the `r`/`z` writes are
+coalesced** (a warp = 32 contiguous `sc` = one aligned 128 B / 256 B transaction). The
+contraction axes (`tx` in K2, `rx` in K4) are the *per-thread loops*, where strided access is
+amortized in registers and never hits the coalesced path. (Victim `u` is constant within a
+PRB allocation, so a warp shares `u` except at the few allocation boundaries.)
+
+### The one real fork (and why we pick `sc`-as-lane)
+
+| | **A — `sc`-as-lane, thread-per-output, contract in a loop** *(chosen)* | **B — contraction-as-lane, warp-per-output, warp-reduce** |
+|---|---|---|
+| Innermost axis | `sc` (all tensors) | `tx`/`rx` |
+| Reads coalesced | yes | yes |
+| **Output writes** | **coalesced** (32 `sc`/warp) | **scattered** (1 elem/warp) |
+| Reduction | none (register accumulate) | warp-shuffle (log₂32 ×2) |
+| Parallelism | C·numRx·numSc threads | C·numRx·numSc **warps** (≫) |
+| Best when | default; simple, all-coalesced | HBM under-saturated → need more warps |
+
+**Default = A** — it coalesces reads *and* writes, needs no reduction, and the SU per-symbol
+volume is small enough that its occupancy (~100s of blocks, boosted by **split-K over `tx`**,
+E.8) saturates HBM. **B** is the escalation if profiling shows the bandwidth-bound K2/K3
+under-utilizing HBM at scale; switching to B flips the innermost axis to the contraction
+dimension *for `H` and `y` only* and adds a warp-reduction — a layout change, hence flagged
+here rather than chosen blind.
+
+> **E.2's tables show logical shapes; this section (E.11) is the implementation-accurate
+> form** — flat arrays, `numScP` padding, index macros, and the `threadIdx.x→sc` mapping.
+
+---
+
+## E.12 Worked example — K2 coalescing & occupancy (the numbers)
+
+Phase-1 SU 2-cell, `H` half2, `y`/`r_dl` cf32, block = 256 (8 warps), µ=1 (T_sym = 35.7 µs).
+H100: 132 SMs, HBM 3.35 TB/s, L2 50 MB, 65536 regs/SM, HBM latency ≈ 500 ns.
+
+### Coalescing (per access, Scheme A, lane = `sc`)
+
+A warp = 32 lanes = 32 consecutive `sc`. With `numScP` padding, each row start is 128-B
+aligned, so:
+
+| Access | Per-warp request | Transactions | Bus efficiency |
+|---|---|---|---|
+| `H_dl[c2][u][rx][tx][sc]` (half2) | 32·4 B = **128 B** | **1 sector** | 100 % |
+| `y[c2][tx][sc]` (cf32) | 32·8 B = 256 B | 2 sectors | 100 % |
+| `r_dl[u][rx][sc]` write (cf32) | 256 B | 2 sectors | 100 % |
+
+No wasted bytes. (Only warps straddling a PRB-allocation boundary — where victim `u` changes
+mid-warp — split into ≤2 segments; rare, since allocations span ≥ 1 PRB = 12 `sc`.)
+
+### Per-symbol HBM volume (variant (a): `rx` in-thread → `y` reused across the 4 rx)
+
+```
+H  read = C·numSc·numRx·(C·numTx)·4B = 2·3276·4·128·4   = 13.4 MB   (each H coeff once)
+y  read = C·(C·numTx)·numSc·8B        = 2·128·3276·8      =  6.7 MB   (y read by both victims/sc, reused over 4 rx)
+r_dl wr = C·numSc·numRx·8B            = 2·3276·4·8        =  0.2 MB
+                                                          ──────────
+                                                  total ≈ 20.3 MB / symbol  (cold, no L2 reuse)
+```
+(Variant (b), `rx` in-grid, loses the y-reuse → `y` read = 26.8 MB → total ≈ 40.4 MB.)
+
+### The occupancy trap (why the naive launch fails)
+
+Variant (a) grid = `(C, ⌈numScP/256⌉)` = `(2, 13)` = **26 blocks** = 208 warps. Registers
+(~40/thread → ~6 blocks/SM possible) are *not* the limit — **block count is**: 26 blocks
+light up only 26 of 132 SMs.
+
+Saturating HBM needs ≈ `BW · latency = 3.35 TB/s · 500 ns ≈ 1.68 MB` of loads in flight
+(Little's law). 208 warps × ~6 outstanding 128-B loads ≈ **0.16 MB in flight → ~320 GB/s
+achieved**, so:
+```
+20.3 MB / 320 GB/s ≈ 63 µs  ≫  T_sym 35.7 µs      ❌ throughput clock BLOWN
+```
+Variant (b)'s 104 blocks → ~1.28 TB/s → 40.4 MB / 1.28 TB/s ≈ **31 µs** — fits, but tight and
+with 2× the traffic.
+
+### The fix — split-K over `tx` (required, not optional, for the cold symbol)
+
+Add a reduction axis over the 64 `tx`: `gridDim.z = SPLITK`, each block sums a `64/SPLITK`-tx
+slice into a partial; a tiny follow-up reduces partials (or `atomicAdd` 2×float). **`SPLITK =
+16`** on variant (a): grid `(2, 13, 16)` = **416 blocks** = 3328 warps → ~2.5 MB in flight →
+**saturates ~3.35 TB/s**, keeping variant (a)'s low 20.3 MB:
+```
+20.3 MB / ~3.0 TB/s ≈ 6.8 µs   ✅  (cold)   ·   reduction adds < 1 µs
+```
+
+### Steady state: it's actually L2-bound
+
+With stable scheduling the 13.4 MB `H` + 3.4 MB `y` working set is **L2-resident** (< 50 MB),
+so HBM sees only the 0.2 MB `r_dl` write. K2 then runs at **L2 bandwidth (several× HBM)** →
+**≈ 1.7 µs**. The 6.8 µs cold figure governs the per-symbol deadline (cold recurs on H-swap /
+schedule change); the steady state is far under it.
+
+### Verdict
+
+**Default = variant (a) + split-K over `tx` (`SPLITK≈16`).** Cold ≈ 7 µs, steady ≈ 2 µs —
+both comfortably inside the compute stage's `T_sym` budget. The naive 26-block launch
+(my earlier "~15 % HBM" estimate) **does not** meet the budget — occupancy, not coalescing,
+was the gap. K3 (UL) is analogous; K1/K4 are compute-trivial and untouched by this.
+
+---
+
+### Status — **complete (steps 1–8 + lifecycle E.9 + dynamic-`H` E.10 + exact layouts E.11 + worked example E.12).**
+Covers numeric formats, full GPU memory layout & allocation, the CUDA-graph dataflow, all six
+hot-path kernels (K0–K5) with grid/block/warp/thread maps, coalescing and launch configs, the
+`H`/`P`/`x`/`y` lifecycle + cache-friendly layout, and the dynamic-`H` update path. Open items
+are tuning/decision points, not gaps. Feeds the `dsp/` and `channel/` implementation.

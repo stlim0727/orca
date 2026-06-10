@@ -21,7 +21,7 @@ the source of truth** — read them before proposing anything:
 - @docs/specs/timing-and-deadlines.md — Spec A: per-symbol timing & deadline budget.
 - @docs/specs/fronthaul-packet-format.md — Spec B: ORU fronthaul wire format (north/vDU), eAxC, multi-cell addressing.
 - @docs/specs/vue-interface-contract.md — Spec D: in-box vUE interface (south) — CUDA IPC bulk + DPDK shm control, handshake, per-symbol protocol.
-- @docs/specs/gpu-kernel-design.md — Spec E: GPU kernels & memory — tensor layouts, allocation, K0–K5 grid/block/thread maps, coalescing, occupancy.
+- @docs/specs/gpu-kernel-design.md — Spec E: GPU kernels & memory — layouts/allocation, K0–K5 maps, coalescing, occupancy, H/P/x/y lifecycle + L2 cache behavior, dynamic-H update.
 - @docs/decisions/0001-hot-path-synchronization.md — ADR 0001: CUDA Graph + CPU-controlled DOCA + indirection cell.
 - @docs/decisions/0002-multi-cell-interference-mobility.md — ADR 0002: multi-cell, interference, mobility.
 - @docs/decisions/0003-throughput-latency-pipeline.md — ADR 0003: throughput/latency decoupling, symbol pipeline, vUE in-box.
