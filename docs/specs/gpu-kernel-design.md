@@ -594,7 +594,50 @@ was the gap. K3 (UL) is analogous; K1/K4 are compute-trivial and untouched by th
 
 ---
 
-### Status — **complete (steps 1–8 + lifecycle E.9 + dynamic-`H` E.10 + exact layouts E.11 + worked example E.12).**
+## E.13 End-to-end per-symbol timeline (the integration)
+
+Ties the kernels (this spec), the north H2D/D2H ([Spec F](oru-interface-contract.md)), the
+vUE HBM handoff ([Spec D](vue-interface-contract.md)), and the two-clock budget
+([Spec A §A.3](timing-and-deadlines.md)) into concrete numbers. TDD → a symbol is **DL or UL**
+(the captured graph holds both; the inactive side has `numAllocs=0` → its static-grid blocks
+early-return, ~0 work). Stages map to the ADR 0003 pipeline: **copy-in ∥ compute ∥ copy-out**
+overlap across consecutive symbols.
+
+### DL symbol (vDU → ORCA → vUE)
+
+| Stage | Operation | Cold | Steady |
+|---|---|---|---|
+| copy-in | H2D `x_dl_host` (105 KB) + `d_allocs` + build `d_victim` (Spec F) | ~3 µs | ~3 µs |
+| compute | graph: **K0** convert → **K1** precode → **K2** channel (+launch ~2 µs) | **~10 µs** | **~5 µs** |
+| handoff | `r_dl` event + Spec D doorbell — **vUE reads from HBM, no copy** | ~0.5 µs | ~0.5 µs |
+
+### UL symbol (vUE → ORCA → vDU)
+
+| Stage | Operation | Cold | Steady |
+|---|---|---|---|
+| copy-in | `x_ul` **already in HBM** (CUDA IPC, no copy) + doorbell (Spec D) | ~0.5 µs | ~0.5 µs |
+| compute | graph: **K3** channel → **K4** combine → **K5** pack (+launch ~2 µs) | **~10 µs** | **~5 µs** |
+| copy-out | D2H `z` (105 KB) + Spec F doorbell → ORU process | ~3 µs | ~3 µs |
+
+Compute breakdown (cold): launch ~2 + K0/K1 (or K4/K5) ~1–2 + **K2 (or K3) ~7** (E.12) ≈ 10 µs;
+steady ~5 µs (K2/K3 fall to ~2 µs, L2-bound). The host-staged copy lands **once per direction,
+on the vDU side only** — DL handoff and UL copy-in are free (vUE bulk lives in HBM).
+
+### Clock checks
+
+- **Throughput (rate):** the binding stage is **compute ≈ 10 µs cold** ≤ `T_sym = 35.7 µs` →
+  one symbol every ~10 µs sustainable — **~3.5× headroom** even cold. ✅
+- **Latency (deadline):** ORCA's Σ contribution ≈ copy-in + compute + copy-out ≈ **~13–16 µs
+  cold**. With the arrival/reassembly wait (~35 µs, on the ORU/vUE side, pipelined) and peer
+  processing, the end-to-end Σ stays **< `L_max` ≈ 70 µs**. ✅
+
+> **Refines Spec A §A.3:** the latency table's "compute ~6 µs" counted *kernel* time only;
+> E.13's **~13–16 µs** includes the per-symbol H2D/D2H and the `cudaGraphLaunch` — still well
+> within budget, but the honest figure for the compute+copy span.
+
+---
+
+### Status — **complete (steps 1–8 + E.9 lifecycle + E.10 dynamic-`H` + E.11 exact layouts + E.12 K2 numbers + E.13 per-symbol timeline).**
 Covers numeric formats, full GPU memory layout & allocation, the CUDA-graph dataflow, all six
 hot-path kernels (K0–K5) with grid/block/warp/thread maps, coalescing and launch configs, the
 `H`/`P`/`x`/`y` lifecycle + cache-friendly layout, and the dynamic-`H` update path. Open items

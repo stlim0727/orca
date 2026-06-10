@@ -94,10 +94,10 @@ latencies (µ=1, multi-cell, `H` footprint resolved):
 | Segment | Latency | Note |
 |---|---|---|
 | arrival / reassembly wait | ~35 µs | mostly *waiting* for the vDU's sections (pipelined) |
-| compute | ~6 µs | multi-cell, after ADR 0002 §6 resolution |
+| compute | ~6 µs kernels (**~13–16 µs** incl. H2D + graph-launch, Spec E §E.13) | cold; ~5–10 µs steady (L2) |
 | egress | ~5–10 µs | vDU side: NIC; vUE side: in-HBM |
 | margin | ~7 µs | should become measured p99.9 jitter |
-| **Σ** | **~53–58 µs** | **< ~70 µs `L_max` → closes** |
+| **Σ** | **~60–65 µs cold / ~50 µs steady** | **< ~70 µs `L_max` → closes** (tighter cold; Spec E §E.13) |
 
 > **`T_proc ≤ 3 µs` is retired.** It came from treating compute as the *residual* of one
 > symbol period alongside ingest + egress — a category error. Compute gets up to a
