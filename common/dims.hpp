@@ -33,6 +33,10 @@ constexpr uint32_t numScP = roundUp(numSc, 32);  // 3296
 constexpr uint32_t N_ring     = 4;    // symbol ring slots (Spec A §A.5, N ≥ 3)
 constexpr uint32_t MAX_ALLOCS = 512;  // static-grid bound (Spec E §E.8)
 
+// Stage-1 identity image: the cf32 image of x_dl[C][rankMax][numScP] carried
+// at the head of the vUE DL/UL slots until the real K1–K4 kernels land.
+constexpr uint32_t identityImageElems = C * rankMax * numScP;
+
 // Numerology (Spec A §A.2): µ=1 target.
 constexpr uint32_t mu          = 1;
 constexpr uint32_t slotsPerFrame(uint32_t mu_) { return 10u << mu_; }

@@ -24,3 +24,10 @@ add_test(NAME oru_process COMMAND test_oru_process)
 
 # The standalone program's smoke loop doubles as a test.
 add_test(NAME oru_process_smoke COMMAND oru_process 28)
+
+add_executable(test_e2e_identity test_e2e_identity.cpp)
+target_link_libraries(test_e2e_identity PRIVATE orca_common orca_dsp)
+add_test(NAME e2e_identity COMMAND test_e2e_identity)
+
+# The ORCA app's end-to-end smoke loop doubles as a test.
+add_test(NAME orca_app_smoke COMMAND orca_app 280)

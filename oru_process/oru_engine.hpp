@@ -47,8 +47,12 @@ class OruEngine {
 
     using TxFn = std::function<void(const uint8_t* data, uint32_t len)>;
 
-    explicit OruEngine(OruLoopback& transport, Config cfg = {})
-        : t_(transport), cfg_(cfg) {
+    // No `Config cfg = {}` default argument: GCC rejects brace-default-args
+    // of nested classes with NSDMIs (PR c++/96645) — delegate instead.
+    explicit OruEngine(OruLoopback& transport)
+        : OruEngine(transport, Config()) {}
+
+    OruEngine(OruLoopback& transport, Config cfg) : t_(transport), cfg_(cfg) {
         // An invalid eAxC width config would poison every encode/decode;
         // clamp to the deployment default (documented behavior).
         if (!cfg_.eaxc.valid()) cfg_.eaxc = fh::EaxcConfig{};
