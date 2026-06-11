@@ -14,10 +14,11 @@ per-move runtime path** (ADR 0002 §5).
 > precision). **Spec G generates the offline channel table** the slow plane expands into the
 > resident `H`. Spec G is **Phase-1 work** (MILESTONES Stages 4 & 8); Spec C is not.
 
-Related: [ADR 0002](../decisions/0002-multi-cell-interference-mobility.md) (multi-cell /
-mobility), [ADR 0001 §4](../decisions/0001-hot-path-synchronization.md) (indirection-cell
-publish), [Spec E §E.2/§E.9/§E.10](gpu-kernel-design.md) (the `H_dl` tensor this feeds, its
-lifecycle and dynamic-update path).
+Related: [ADR 0008](../decisions/0008-geometric-path-channel-storage.md) (the
+geometric-path storage decision this spec realizes), [ADR 0002](../decisions/0002-multi-cell-interference-mobility.md)
+(multi-cell / mobility), [ADR 0001 §4](../decisions/0001-hot-path-synchronization.md)
+(indirection-cell publish), [Spec E §E.2/§E.9/§E.10](gpu-kernel-design.md) (the `H_dl`
+tensor this feeds, its lifecycle and dynamic-update path).
 
 ---
 
@@ -48,7 +49,11 @@ lifecycle and dynamic-update path).
 
 ---
 
-## G.2 The central decision — store geometric paths, not antenna-CIR or per-SC `H`
+## G.2 Storage domain — geometric paths, not antenna-CIR or per-SC `H`
+
+> **Decided in [ADR 0008](../decisions/0008-geometric-path-channel-storage.md).** This
+> section is the realization; the rationale, rejected alternatives, and revisit triggers
+> live in the ADR.
 
 A link's channel can be persisted at three levels. Spec G stores the **geometric path
 (ray) list** and expands at runtime.

@@ -196,7 +196,7 @@ decision and rationale. Summary:
 | `fh/` | custom fronthaul wire format, eAxC, DOCA GPUNetIO rx/tx + loopback |
 | `orchestr/` | symbol ring, coverage, deadline scheduler, `T_air` timing |
 | `dsp/` | precode / channel-apply (cross-link, batched GEMV→GEMM per Spec C / ADR 0002 §6) / combine kernels (CUDA graph nodes) |
-| `channel/` | offline CIR-table generator (ray tracer) + grid lookup, ray→`H` expansion, indirection-cell double buffer — **Spec G** (table/format/expansion) |
+| `channel/` | offline CIR-table generator (ray tracer) + grid lookup, ray→`H` expansion, indirection-cell double buffer — **ADR 0008 / Spec G** (geometric-path storage, table/format/expansion) |
 | `estim/` | SRS channel estimation + weight computation (cuSOLVER) — **deferred (ADR 0006)**, dormant in Phase 1 |
 | `scenario/` | cells, UE grid + mobility, serving-cell/interferer association, contribution lists, **resident beam codebook** (ADR 0006) |
 | `oru/` | `OruTransport` (host-shm + H2D/D2H, Spec F) inside ORCA + handshake. The **ORU process** (NIC + Spec B framing) is a *separate program* (ADR 0007), not part of ORCA. |

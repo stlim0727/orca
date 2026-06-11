@@ -71,6 +71,7 @@ costs to bring back are tracked in [`docs/deferred-goals.md`](docs/deferred-goal
 | [`docs/decisions/0005-su-mimo-phase1.md`](docs/decisions/0005-su-mimo-phase1.md) | **ADR 0005** — SU-MIMO for Phase 1; MU-MIMO deferred (the 16× bandwidth reason). |
 | [`docs/decisions/0006-beam-indexed-precoding.md`](docs/decisions/0006-beam-indexed-precoding.md) | **ADR 0006** — beam-indexed precoding (resident codebook, `beam_id` from vDU); SRS deferred. |
 | [`docs/decisions/0007-process-topology-doca-deferral.md`](docs/decisions/0007-process-topology-doca-deferral.md) | **ADR 0007** — three-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north ingress. |
+| [`docs/decisions/0008-geometric-path-channel-storage.md`](docs/decisions/0008-geometric-path-channel-storage.md) | **ADR 0008** — store the offline channel as geometric paths (rays), not antenna-CIR or per-SC `H`; slow-plane ray→`H` expansion; host-resident table. Realized by Spec G. |
 | [`docs/deferred-goals.md`](docs/deferred-goals.md) | Register of deferred capabilities + the compromises/enabling work to re-enable each. |
 | [`docs/MILESTONES.md`](docs/MILESTONES.md) | Stage-by-stage implementation plan and hot-path invariants. |
 
