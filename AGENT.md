@@ -8,12 +8,19 @@ design is the source of truth), then this file for *where we are and what to do 
 
 ## Where things stand (2026-06-11)
 
-- **Design is complete; there is no code yet.** The source tree was intentionally removed —
-  `docs/` is the deliverable so far (architecture, Spec A/B/D/E/F/G, ADR 0001–0008).
-- **We are starting implementation at MILESTONES Stage 1** (loopback / identity transform).
-- **A Stage-1 plan was reviewed and approved** (embedded in full below).
+- **Design is complete** (architecture, Spec A/B/D/E/F/G, ADR 0001–0008).
+- **Stage-1 HOST CONFIG IS COMPLETE (1a–1f)** — implemented per the plan below, each
+  sub-stage reviewed by codex (all findings applied) and built+tested green in **Codex
+  Cloud** (no local toolchain): 9/9 ctest at `561aff5`, GCC 13.3 / C++17, end-to-end
+  identity **bit-exact (vDU-in == vDU-out)** with jitter percentiles printed.
+  See docs/MILESTONES.md Stage-1 status note for what remains on the target box
+  (Linux/CUDA backends as drop-in swaps behind the existing seams).
 - **Toolchain choice locked:** **C++17**, CUDA/DOCA behind OFF-able CMake flags
   (`EMU_WITH_CUDA`, `EMU_WITH_DOCA`).
+- **Workflow note:** this Windows box still has no C++ toolchain; builds/tests run via
+  `codex cloud exec --env "stlim0727/orca" --branch <branch>` after pushing — instruct the
+  task to write a `BUILD_REPORT.md` (sha + ctest output + VERDICT) since the CLI does not
+  expose the agent's text reply.
 
 ## Why this handoff exists — environment blocker
 

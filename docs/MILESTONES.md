@@ -15,6 +15,17 @@ lives in per the [intended structure](architecture.md#intended-module-structure-
 | **8** | **Dynamic grid mobility**: **host-resident** offline per-`(cell, grid-point)` CIR table (**Spec G**), slow-plane lookup on UE move → ray→`H` expansion into the GPU-resident `H_dl` back buffer; per-link per-symbol Doppler; serving-cell handover. | `scenario/`, `channel/` |
 | **9** *(deferred — very later)* | **MU-MIMO**: stack UEs per resource. **Requires Spec C** (`H` per-PRB-group/tap-domain) for the 16× `H`-read blow-up (ADR 0002 §6), plus MU precoding/pairing. See [deferred-goals → MU-MIMO](deferred-goals.md#mu-mimo). | `dsp/`, `channel/`, `estim/` |
 
+> **Stage-1 status (2026-06-11): host config COMPLETE (sub-stages 1a–1f, AGENT.md plan).**
+> `common/` layouts (Spec E §E.11), `orchestr/` timing/ring/jitter (Spec A), transport
+> seams + loopback backends (Spec D §D.8 / Spec F §F.8), `fh/` Spec B framing, ORU-process
+> engine + vDU stub, and the `app/` identity hot path (K0→K5) with vUE stub. End-to-end
+> **vDU-in == vDU-out bit-exact** (9/9 ctest green, GCC 13 / C++17, verified in Codex
+> Cloud at `561aff5`). Every sub-stage was codex-reviewed; all findings applied.
+> **Remaining for Stage 1 (target box):** Linux backends as drop-in swaps (DPDK shm +
+> `cudaHostRegister` H2D/D2H north, CUDA IPC south), CUDA K0/K5 + stream-ordered launch,
+> real per-symbol jitter on the H100 (also: widen the jitter histogram range — host-loop
+> spans overflow the 1 ms bins).
+
 > **Phase 1 = SU-MIMO, 2 cells, all-to-all, per-SC FP16 `H` resident** (ADR 0005). MU-MIMO
 > (Stage 9) and Spec C are deferred — see [deferred-goals.md](deferred-goals.md).
 > **Design in the cell dimension from Stage 1.** Even while Stages 1–6 run single-cell,
