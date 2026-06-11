@@ -13,3 +13,7 @@ add_test(NAME ring COMMAND test_ring)
 add_executable(test_transport_loopback test_transport_loopback.cpp)
 target_link_libraries(test_transport_loopback PRIVATE orca_common)
 add_test(NAME transport_loopback COMMAND test_transport_loopback)
+
+add_executable(test_fh test_fh.cpp)
+target_link_libraries(test_fh PRIVATE orca_common)
+add_test(NAME fh COMMAND test_fh)
