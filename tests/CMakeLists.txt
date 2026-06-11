@@ -37,5 +37,9 @@ add_executable(test_precode test_precode.cpp)
 target_link_libraries(test_precode PRIVATE orca_common orca_dsp)
 add_test(NAME precode COMMAND test_precode)
 
+add_executable(test_channel_apply test_channel_apply.cpp)
+target_link_libraries(test_channel_apply PRIVATE orca_common orca_dsp)
+add_test(NAME channel_apply COMMAND test_channel_apply)
+
 # The ORCA app's end-to-end smoke loop doubles as a test.
 add_test(NAME orca_app_smoke COMMAND orca_app 280)
