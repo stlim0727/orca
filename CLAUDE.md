@@ -98,9 +98,12 @@ the source of truth** — read them before proposing anything:
      **Deferred out of Phase 1 by ADR 0005** (SU-MIMO + per-SC FP16 fits at ~11% HBM);
      becomes critical when MU-MIMO / more cells return. See deferred-goals.md.
 
-2. **Offline CIR-table toolchain (proposed Spec C)** — grid resolution, interpolation
+2. **Offline CIR-table toolchain (proposed Spec G)** — grid resolution, interpolation
    method, storage format, and how the OptiX tracer populates per-(cell, grid-point) CIR.
-   Named in ADR 0002 §5 but unspecified.
+   Named in ADR 0002 §5 but unspecified. **Distinct from Spec C** (open thread #1 / the
+   coherence-granularity decision): **Spec G *generates* the offline `H` table; Spec C
+   decides *how `H` is applied* on the hot path** (per-SC vs per-PRB-group vs tap-domain).
+   Needed for MILESTONES Stages 4 & 8 — **Phase-1 work, not deferred** (unlike Spec C).
 
 3. **UL combiner** — ✅ resolved by **ADR 0006**: combine = `beam_id` codebook gather
    (`64 → rank`), symmetric with DL precode. SRS-derived MMSE/MRC weights are **deferred**

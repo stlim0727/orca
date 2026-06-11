@@ -108,7 +108,8 @@ The vUE module runs **inside the GPU box**. Therefore:
 
 ### Positive
 - The budget is now correct and auditable: a rate constraint and a deadline constraint,
-  each with its own table. The design **closes** — latency Σ ≈ 51–58 µs < ~70 µs, and
+  each with its own table. The design **closes** — latency Σ ≈ ~60–65 µs cold / ~50 µs
+  steady < ~70 µs (Spec A §A.3, Spec E §E.13), and
   throughput is met iff the compute stage sustains ≤ `T_sym` (which needs Spec C's `H`
   reduction).
 - vUE-in-box removes the per-antenna PCIe wall and shrinks the NIC budget to the vDU
@@ -132,8 +133,8 @@ The vUE module runs **inside the GPU box**. Therefore:
 - **CLAUDE.md** → locked decisions + open threads; next ADR is 0004.
 
 ## Revisit if…
-- The real fronthaul tolerance forces `L_max` below the Σ of stage latencies (~50–58 µs)
-  → shrink stages or reduce pipeline depth.
+- The real fronthaul tolerance forces `L_max` below the Σ of stage latencies (~50 µs
+  steady / ~60–65 µs cold) → shrink stages or reduce pipeline depth.
 - Throughput cannot be met on one GPU even with `H` reduced (Spec C) → replication +
   partitioning (§6) becomes mandatory, reopening inter-box channel-state exchange.
 - A reason emerges to run vUE off-GPU (e.g. external UE stack) → re-examine the PCIe

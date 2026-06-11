@@ -60,7 +60,8 @@ Throughput and latency are **separate** constraints; see
   The compute stage's HBM bandwidth for `H` (ADR 0002 §6) is the real limit; pipelining
   does **not** relax it.
 - **Latency (deadline):** Σ stage latencies ≤ `L_max` (working ~70 µs ≈ 2·`T_sym`, <
-  real fronthaul tolerance TBD). Representative Σ ≈ 53–58 µs → closes.
+  real fronthaul tolerance TBD). Representative Σ ≈ ~60–65 µs cold / ~50 µs steady →
+  closes (Spec A §A.3 / Spec E §E.13).
 
 `T_proc ≤ 3 µs` is **retired** (it was a residual-of-one-symbol category error, ADR 0003
 §3). All segment numbers are provisional pending H100/NIC measurement and Spec C. µ=2/µ=3
