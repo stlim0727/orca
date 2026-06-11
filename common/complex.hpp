@@ -22,6 +22,17 @@ struct ci16 {
 };
 static_assert(sizeof(ci16) == 4, "ci16 is 4 B");
 
+// ---- complex arithmetic (compute domain) ------------------------------------
+
+constexpr cf32 cadd(cf32 a, cf32 b) { return cf32{a.re + b.re, a.im + b.im}; }
+
+constexpr cf32 cmul(cf32 a, cf32 b) {
+    return cf32{a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re};
+}
+
+// acc += a·b
+constexpr cf32 cmac(cf32 acc, cf32 a, cf32 b) { return cadd(acc, cmul(a, b)); }
+
 // ---- K0: ci16 → cf32 -------------------------------------------------------
 
 constexpr cf32 toCf32(ci16 v) {

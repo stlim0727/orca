@@ -21,7 +21,7 @@ target_include_directories(orca_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # DSP kernels — host (CPU) implementations; CUDA variants land behind
 # EMU_WITH_CUDA with the same signatures (Spec E §E.7).
-add_library(orca_dsp STATIC dsp/convert.cpp)
+add_library(orca_dsp STATIC dsp/convert.cpp dsp/precode.cpp dsp/awgn.cpp)
 target_link_libraries(orca_dsp PUBLIC orca_common)
 
 # Separate ORU process program (ADR 0007) — host build runs an in-memory

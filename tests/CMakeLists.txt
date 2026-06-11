@@ -29,5 +29,13 @@ add_executable(test_e2e_identity test_e2e_identity.cpp)
 target_link_libraries(test_e2e_identity PRIVATE orca_common orca_dsp)
 add_test(NAME e2e_identity COMMAND test_e2e_identity)
 
+add_executable(test_philox test_philox.cpp)
+target_link_libraries(test_philox PRIVATE orca_common orca_dsp)
+add_test(NAME philox COMMAND test_philox)
+
+add_executable(test_precode test_precode.cpp)
+target_link_libraries(test_precode PRIVATE orca_common orca_dsp)
+add_test(NAME precode COMMAND test_precode)
+
 # The ORCA app's end-to-end smoke loop doubles as a test.
 add_test(NAME orca_app_smoke COMMAND orca_app 280)
