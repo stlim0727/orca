@@ -41,5 +41,9 @@ add_executable(test_channel_apply test_channel_apply.cpp)
 target_link_libraries(test_channel_apply PRIVATE orca_common orca_dsp)
 add_test(NAME channel_apply COMMAND test_channel_apply)
 
+add_executable(test_combine test_combine.cpp)
+target_link_libraries(test_combine PRIVATE orca_common orca_dsp)
+add_test(NAME combine COMMAND test_combine)
+
 # The ORCA app's end-to-end smoke loop doubles as a test.
 add_test(NAME orca_app_smoke COMMAND orca_app 280)

@@ -2,6 +2,7 @@
 
 #include <cstring>
 
+#include "channel/doppler.hpp"
 #include "common/dims.hpp"
 #include "common/layout.hpp"
 #include "dsp/awgn.hpp"
