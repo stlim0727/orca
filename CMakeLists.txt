@@ -19,5 +19,10 @@ endif()
 add_library(orca_common INTERFACE)
 target_include_directories(orca_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
+# Separate ORU process program (ADR 0007) — host build runs an in-memory
+# smoke loop until Linux socket bring-up.
+add_executable(oru_process oru_process/main.cpp)
+target_link_libraries(oru_process PRIVATE orca_common)
+
 enable_testing()
 add_subdirectory(tests)

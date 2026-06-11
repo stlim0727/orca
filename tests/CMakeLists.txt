@@ -17,3 +17,10 @@ add_test(NAME transport_loopback COMMAND test_transport_loopback)
 add_executable(test_fh test_fh.cpp)
 target_link_libraries(test_fh PRIVATE orca_common)
 add_test(NAME fh COMMAND test_fh)
+
+add_executable(test_oru_process test_oru_process.cpp)
+target_link_libraries(test_oru_process PRIVATE orca_common)
+add_test(NAME oru_process COMMAND test_oru_process)
+
+# The standalone program's smoke loop doubles as a test.
+add_test(NAME oru_process_smoke COMMAND oru_process 28)
