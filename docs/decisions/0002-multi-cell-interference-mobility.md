@@ -88,7 +88,10 @@ by ray tracing into a **per-`(cell, grid-point)` CIR table**. At runtime:
   per-symbol *between* slow CIR updates, parametrized by both endpoints' locations.
 
 Live OptiX ray tracing is retained only as the **offline table generator** (and as an
-optional source for arbitrary geometry), never on the per-move runtime path.
+optional source for arbitrary geometry), never on the per-move runtime path. The toolchain,
+on-disk table format, and the slow-plane ray→`H` expansion are specified in
+**[Spec G](../specs/cir-table-toolchain.md)** (which stores geometric paths, not expanded
+`H`; distinct from the deferred Spec C of §6).
 
 ### 6. The binding constraint is memory bandwidth, not FLOPs
 

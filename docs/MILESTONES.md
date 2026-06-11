@@ -8,11 +8,11 @@ lives in per the [intended structure](architecture.md#intended-module-structure-
 | **1** | **Loopback, no channel (identity transform).** *North:* vDU ↔ **ORU process** (Ethernet, Spec B; **DOCA deferred** — kernel/DPDK) ↔ ORCA over **host shm + H2D/D2H** (**Spec F**). *South:* ORCA ↔ vUE over **DPDK shared memory** + bulk in HBM via **CUDA IPC** (ADR 0004 / **Spec D**). ORCA covers the O-RU/RU role; per-symbol jitter measured. | ORU process (sep. program), `oru/` (`OruTransport`), `vue/`, `orchestr/`, `app/` |
 | **2** | DL precode via **resident beam codebook**, `beam_id` from the vDU C-plane (ADR 0006) + AWGN; validate vs CPU golden. | `scenario/` (codebook), `dsp/` (precode) |
 | **3** | Static multipath channel apply (single CIR) + Doppler rotor. | `channel/`, `dsp/` (channel-apply) |
-| **4** | Slow ray tracer / trace replay feeding the indirection-cell double buffer. | `channel/` |
+| **4** | Slow ray tracer / trace replay feeding the indirection-cell double buffer; offline CIR-table generator + loader + ray→`H` expansion (**Spec G**). | `channel/` |
 | **5** | **UL combine** via resident combining codebook, `beam_id` from the vDU (ADR 0006). *(SRS / GPU-computed ZF/MMSE/SVD deferred — see deferred-goals.)* | `scenario/`, `dsp/` (combine) |
 | **6** | Scale-out: many vUEs, deadline scheduler, sustained real-time soak. | `orchestr/`, `app/` |
 | **7** | **Multi-cell + inter-cell interference** (Phase-1 target: **2 cells, all-to-all, SU-MIMO**): cell dimension end-to-end; cross-link `H[cell][ue]`; per-symbol scheduling/allocation map (ADR 0005); channel-apply as a batched **GEMV** — per-SC FP16 `H` fits HBM under SU (~11%, ADR 0005), no `H`-footprint reduction needed. | `scenario/`, `dsp/`, `channel/`, `fh/` |
-| **8** | **Dynamic grid mobility**: offline per-`(cell, grid-point)` CIR/`H` table resident in GPU memory; slow-plane lookup/interp on UE move; per-link per-symbol Doppler; serving-cell handover. | `scenario/`, `channel/` |
+| **8** | **Dynamic grid mobility**: **host-resident** offline per-`(cell, grid-point)` CIR table (**Spec G**), slow-plane lookup on UE move → ray→`H` expansion into the GPU-resident `H_dl` back buffer; per-link per-symbol Doppler; serving-cell handover. | `scenario/`, `channel/` |
 | **9** *(deferred — very later)* | **MU-MIMO**: stack UEs per resource. **Requires Spec C** (`H` per-PRB-group/tap-domain) for the 16× `H`-read blow-up (ADR 0002 §6), plus MU precoding/pairing. See [deferred-goals → MU-MIMO](deferred-goals.md#mu-mimo). | `dsp/`, `channel/`, `estim/` |
 
 > **Phase 1 = SU-MIMO, 2 cells, all-to-all, per-SC FP16 `H` resident** (ADR 0005). MU-MIMO

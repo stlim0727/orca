@@ -94,8 +94,9 @@ Two decoupled rates communicating through a double-buffered coefficient store
 (published via an **indirection cell**, ADR 0001 §4):
 
 - **Slow plane (every few ms / on UE movement):** a **precomputed per-`(cell,
-  grid-point)` CIR table** (built offline by the OptiX ray tracer) is looked up — with
-  optional interpolation — for each UE's current grid position → CIR taps → FFT →
+  grid-point)` CIR table** (built offline by the OptiX ray tracer, **[Spec G](specs/cir-table-toolchain.md)**)
+  is looked up — nearest grid point, interpolation deferred — for each UE's current grid
+  position → geometric paths → ray→`H` expansion (array steering + delay DFT) →
   per-subcarrier cross-link frequency response `H[cell][ue][rx][tx][sc]`. Only the
   links affected by a move are refilled in the back buffer, then published. UE moves
   may also update **serving-cell / interferer association** (handover).
@@ -195,7 +196,7 @@ decision and rationale. Summary:
 | `fh/` | custom fronthaul wire format, eAxC, DOCA GPUNetIO rx/tx + loopback |
 | `orchestr/` | symbol ring, coverage, deadline scheduler, `T_air` timing |
 | `dsp/` | precode / channel-apply (cross-link, batched GEMV→GEMM per Spec C / ADR 0002 §6) / combine kernels (CUDA graph nodes) |
-| `channel/` | offline CIR-table generator (ray tracer) + grid lookup, CIR→H FFT, indirection-cell double buffer |
+| `channel/` | offline CIR-table generator (ray tracer) + grid lookup, ray→`H` expansion, indirection-cell double buffer — **Spec G** (table/format/expansion) |
 | `estim/` | SRS channel estimation + weight computation (cuSOLVER) — **deferred (ADR 0006)**, dormant in Phase 1 |
 | `scenario/` | cells, UE grid + mobility, serving-cell/interferer association, contribution lists, **resident beam codebook** (ADR 0006) |
 | `oru/` | `OruTransport` (host-shm + H2D/D2H, Spec F) inside ORCA + handshake. The **ORU process** (NIC + Spec B framing) is a *separate program* (ADR 0007), not part of ORCA. |

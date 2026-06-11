@@ -30,6 +30,7 @@ the source of truth** — read them before proposing anything:
 - @docs/decisions/0006-beam-indexed-precoding.md — ADR 0006: beam_id codebook precoding; SRS deferred.
 - @docs/decisions/0007-process-topology-doca-deferral.md — ADR 0007: 3-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north.
 - @docs/specs/oru-interface-contract.md — Spec F: ORU↔ORCA interface (north) — host shm bulk + H2D/D2H, DPDK control, alloc/beam map.
+- @docs/specs/cir-table-toolchain.md — Spec G: offline OptiX→CIR-table toolchain + on-disk format; slow-plane ray→H expansion (feeds Spec E `H_dl`). Distinct from Spec C.
 - @docs/deferred-goals.md — register of deferred goals + the compromises to re-enable each.
 - @docs/MILESTONES.md — stage plan + hot-path invariants.
 
@@ -98,12 +99,13 @@ the source of truth** — read them before proposing anything:
      **Deferred out of Phase 1 by ADR 0005** (SU-MIMO + per-SC FP16 fits at ~11% HBM);
      becomes critical when MU-MIMO / more cells return. See deferred-goals.md.
 
-2. **Offline CIR-table toolchain (proposed Spec G)** — grid resolution, interpolation
-   method, storage format, and how the OptiX tracer populates per-(cell, grid-point) CIR.
-   Named in ADR 0002 §5 but unspecified. **Distinct from Spec C** (open thread #1 / the
-   coherence-granularity decision): **Spec G *generates* the offline `H` table; Spec C
+2. **Offline CIR-table toolchain** — ✅ now drafted in **[Spec G](docs/specs/cir-table-toolchain.md)**:
+   geometric-path (ray) storage, 2-D grid model, on-disk format, and the slow-plane
+   ray→`H` expansion that feeds Spec E `H_dl`. **Distinct from Spec C** (open thread #1 /
+   the coherence-granularity decision): **Spec G *generates* the offline `H` table; Spec C
    decides *how `H` is applied* on the hot path** (per-SC vs per-PRB-group vs tap-domain).
-   Needed for MILESTONES Stages 4 & 8 — **Phase-1 work, not deferred** (unlike Spec C).
+   Spec G is **Phase-1 work** (Stages 4 & 8), not deferred. Open items in Spec G §G.12
+   are scenario/toolchain parameters (grid spacing, `P_MAX`, interpolation), not gaps.
 
 3. **UL combiner** — ✅ resolved by **ADR 0006**: combine = `beam_id` codebook gather
    (`64 → rank`), symmetric with DL precode. SRS-derived MMSE/MRC weights are **deferred**
