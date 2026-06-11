@@ -9,3 +9,7 @@ add_test(NAME timing COMMAND test_timing)
 add_executable(test_ring test_ring.cpp)
 target_link_libraries(test_ring PRIVATE orca_common)
 add_test(NAME ring COMMAND test_ring)
+
+add_executable(test_transport_loopback test_transport_loopback.cpp)
+target_link_libraries(test_transport_loopback PRIVATE orca_common)
+add_test(NAME transport_loopback COMMAND test_transport_loopback)
