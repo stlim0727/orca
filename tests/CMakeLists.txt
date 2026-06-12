@@ -68,6 +68,11 @@ add_executable(test_channel_refresh test_channel_refresh.cpp)
 target_link_libraries(test_channel_refresh PRIVATE orca_common orca_channel)
 add_test(NAME channel_refresh COMMAND test_channel_refresh)
 
+# ADR 0002 §3/§4 serving-cell + interferer association / handover.
+add_executable(test_association test_association.cpp)
+target_link_libraries(test_association PRIVATE orca_common orca_channel)
+add_test(NAME association COMMAND test_association)
+
 # Cross-process IPC test (OruShm + VueShm, Linux shm backends).
 # The test file compiles on any platform; the actual fork()-based IPC paths are
 # guarded by #ifdef __linux__ so non-Linux builds pass trivially.
