@@ -1,113 +1,136 @@
 # ORCA (*O-RU Channel Applier*) — project memory
 
-**ORCA** is a real-time GPU application that stands in for the O-RU between a real
-5G NR vDU and emulated UEs (vUE): per-OFDM-symbol precode → channel-apply → combine,
-with a ray-traced channel, multi-cell interference, and grid-wise UE mobility. The
-system covers the RU role, including fronthaul-facing termination in the ORU sidecar and
-precoding/combining on behalf of the RU.
+**ORCA** is a real-time GPU app that **stands in for the O-RU** between a real
+5G NR **vDU** and **emulated UEs (vUE)**: per-OFDM-symbol precode → channel-apply →
+combine, with a ray-traced channel, multi-cell interference, and grid-wise UE mobility.
+It covers the **RU role** (fronthaul termination + precoding/combining on behalf of the RU).
 
-## Current state: design-first, no code yet
+**Three in-box processes (ADR 0007):** `ORU process ↔ ORCA ↔ vUE`. *North (vDU)* = a
+**separate ORU process** owns the NIC + **ORU fronthaul packet format** (Spec B) over
+Ethernet (**DOCA deferred**) → relays layer IQ to ORCA via **host shm + H2D** (Spec F).
+*South (vUE, in-box)* = **DPDK shared memory** control; bulk per-antenna IQ in HBM via
+CUDA IPC (ADR 0004 / Spec D). ORCA = the O-RU/RU role; it never sees Ethernet.
 
-The source tree was intentionally removed; the design is the deliverable. The docs are the
-source of truth. Read the project entry points before proposing implementation work:
+## Current state: design-first, NO code yet
 
-- `README.md` — entry point, key design points, intended build.
-- `docs/architecture.md` — settled requirements, topology, spatial dimensions, multi-cell.
-- `docs/specs/timing-and-deadlines.md` — Spec A: per-symbol timing and deadline budget.
-- `docs/specs/fronthaul-packet-format.md` — Spec B: ORU fronthaul wire format, eAxC,
-  multi-cell addressing.
-- `docs/specs/vue-interface-contract.md` — Spec D: in-box vUE interface: CUDA IPC bulk,
-  DPDK shared-memory control, handshake, per-symbol protocol.
-- `docs/specs/gpu-kernel-design.md` — Spec E: GPU kernels and memory: layouts,
-  allocation, K0–K5 maps, coalescing, occupancy, `H`/`P`/`x`/`y` lifecycle, L2 cache
-  behavior, dynamic-`H` update.
-- `docs/specs/oru-interface-contract.md` — Spec F: ORU↔ORCA north interface: host shared
-  memory bulk plus H2D/D2H, DPDK control, allocation and beam map.
-- `docs/specs/cir-table-toolchain.md` — Spec G: offline OptiX→CIR-table toolchain,
-  on-disk format, and slow-plane ray→`H` expansion feeding Spec E `H_dl`.
-- `docs/decisions/0001-hot-path-synchronization.md` — ADR 0001: CUDA Graph,
-  CPU-controlled DOCA, indirection-cell double buffering.
-- `docs/decisions/0002-multi-cell-interference-mobility.md` — ADR 0002: multi-cell,
-  interference, mobility, `H`-bandwidth roofline.
-- `docs/decisions/0003-throughput-latency-pipeline.md` — ADR 0003: throughput/latency
-  decoupling, symbol pipeline, vUE in-box.
-- `docs/decisions/0004-vue-interface-ipc.md` — ADR 0004: vUE IPC: CUDA IPC (HBM) and
-  DPDK shared-memory control now; host/NVLink later.
-- `docs/decisions/0005-su-mimo-phase1.md` — ADR 0005: SU-MIMO for Phase 1; MU-MIMO
-  deferred.
-- `docs/decisions/0006-beam-indexed-precoding.md` — ADR 0006: `beam_id` codebook
-  precoding; SRS deferred.
-- `docs/decisions/0007-process-topology-doca-deferral.md` — ADR 0007: three-process
-  topology (ORU/ORCA/vUE), DOCA deferred, host-staged north ingress.
-- `docs/decisions/0008-geometric-path-channel-storage.md` — ADR 0008: store geometric
-  paths (rays), not antenna-CIR or per-subcarrier `H`; slow-plane ray→`H` expansion;
-  host-resident table.
-- `docs/deferred-goals.md` — deferred goals and the compromises/enabling work to re-enable
-  each.
-- `docs/MILESTONES.md` — stage plan and hot-path invariants.
+The source tree was intentionally removed; the design is the deliverable. **The docs are
+the source of truth** — read them before proposing anything:
 
-## Locked decisions
+- @README.md — entry point, key design points, intended build.
+- @docs/architecture.md — settled requirements, topology, spatial dimensions, multi-cell.
+- @docs/specs/timing-and-deadlines.md — Spec A: per-symbol timing & deadline budget.
+- @docs/specs/fronthaul-packet-format.md — Spec B: ORU fronthaul wire format (north/vDU), eAxC, multi-cell addressing.
+- @docs/specs/vue-interface-contract.md — Spec D: in-box vUE interface (south) — CUDA IPC bulk + DPDK shm control, handshake, per-symbol protocol.
+- @docs/specs/gpu-kernel-design.md — Spec E: GPU kernels & memory — layouts/allocation, K0–K5 maps, coalescing, occupancy, H/P/x/y lifecycle + L2 cache behavior, dynamic-H update.
+- @docs/decisions/0001-hot-path-synchronization.md — ADR 0001: CUDA Graph + CPU-controlled DOCA + indirection cell.
+- @docs/decisions/0002-multi-cell-interference-mobility.md — ADR 0002: multi-cell, interference, mobility.
+- @docs/decisions/0003-throughput-latency-pipeline.md — ADR 0003: throughput/latency decoupling, symbol pipeline, vUE in-box.
+- @docs/decisions/0004-vue-interface-ipc.md — ADR 0004: vUE IPC — CUDA IPC (HBM) + DPDK shm control now; host/NVLink later.
+- @docs/decisions/0005-su-mimo-phase1.md — ADR 0005: SU-MIMO for Phase 1; MU-MIMO deferred.
+- @docs/decisions/0006-beam-indexed-precoding.md — ADR 0006: beam_id codebook precoding; SRS deferred.
+- @docs/decisions/0007-process-topology-doca-deferral.md — ADR 0007: 3-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north.
+- @docs/decisions/0008-geometric-path-channel-storage.md — ADR 0008: store geometric paths (rays), not antenna-CIR/per-SC H; slow-plane ray→H expansion; host-resident table.
+- @docs/decisions/0009-cell-count-scaling.md — ADR 0009: cell-count scaling — single-box ceiling (C² H-BW wall ≈6 cells, L2 cliff ≈4; mitigations neighbor-limit→Spec C) and multi-box strategy (interferer-aware partitioning; NVLink-halo vs IB-clean-partition tiers).
+- @docs/specs/oru-interface-contract.md — Spec F: ORU↔ORCA interface (north) — host shm bulk + H2D/D2H, DPDK control, alloc/beam map.
+- @docs/specs/cir-table-toolchain.md — Spec G: offline OptiX→CIR-table toolchain + on-disk format; slow-plane ray→H expansion (feeds Spec E `H_dl`). Distinct from Spec C.
+- @docs/deferred-goals.md — register of deferred goals + the compromises to re-enable each.
+- @docs/MILESTONES.md — stage plan + hot-path invariants.
 
-Do not relitigate these without a new ADR:
+## Locked decisions (don't relitigate without an ADR)
 
-- **Cadence:** per OFDM symbol, µ=1 (`T_sym = 35.7 µs`). µ≥2 is out of scope.
-- **Throughput vs latency:** throughput is one symbol per `T_sym` with each bottleneck
-  stage ≤ `T_sym`; latency is delivery within `L_max` (working placeholder ~70 µs, less
-  than real fronthaul tolerance TBD). `T_proc ≤ 3 µs` is retired.
-- **Three in-box processes:** `ORU process ↔ ORCA ↔ vUE`. The ORU process owns NIC plus
-  Spec B framing and relays layer IQ to ORCA over host shared memory plus H2D/D2H (Spec F).
-  ORCA never sees Ethernet.
-- **DOCA deferred:** north bulk is host shared memory plus H2D/D2H for Phase 1, justified
-  by small vDU-side volume (~3 GB/s for SU 2-cell). Keep this behind `OruTransport` so
-  DOCA GPUNetIO / GPUDirect can replace the copy later.
-- **vUE is in-box and GPU-resident:** Phase 1 uses GPU PHY on PCIe H100, CUDA IPC for HBM
-  bulk buffers and IPC events, and DPDK shared memory for control only. Keep this behind
-  `VueTransport`; buffer layout should remain stable for future Grace-Hopper/NVLink-C2C
-  migration.
-- **Hot-path sync:** captured CUDA Graph launch per symbol, CPU-controlled orchestration,
-  and indirection-cell double buffering. No persistent kernels, doorbells, or system-scope
-  flags at µ=1.
-- **Spatial:** 64 TRX. DL precodes `rank → 64 Tx`; UL combines `64 Rx → rank`. Phase-1 UE
-  rank is ≤4.
-- **Phase-1 target:** SU-MIMO, 2 cells, all-to-all inter-cell interference, grid mobility,
-  all channel coefficients resident as per-subcarrier FP16 `H`, µ=1, vUE in-box, and a
-  single PCIe H100. The per-symbol `H` read is ~0.38 TB/s (~11% of HBM), so Spec C channel
-  compression is deferred.
-- **Spatial multiplexing:** Phase 1 is SU-MIMO only: one UE per time-frequency resource,
-  OFDMA scheduling separates UEs, and the vDU provides a per-symbol scheduling/allocation
-  map. MU-MIMO is deferred because it reintroduces a 16× `H`-read blow-up.
-- **Precoding:** use a beam-indexed codebook resident in GPU memory. The vDU supplies
-  `beam_id` per resource at runtime. SRS-derived weights and GPU-computed ZF/MMSE/SVD are
-  deferred; `estim/` remains dormant in Phase 1.
-- **Mobility/channel storage:** UE positions are on a discrete grid. The offline table
-  stores host-resident geometric paths per `(cell, grid-point)`, not antenna-CIR or
-  per-subcarrier `H`; the slow plane expands rays→`H` into GPU-resident `H_dl` on moves.
-- **Slow plane isolation:** slow-plane updates never touch the hot path directly; publish
-  through the atomic indirection cell.
-- **Late symbols:** never stall on a late symbol; zero-fill missing PRBs and advance.
+- **Cadence:** per OFDM symbol, **µ=1** (35.7 µs). µ≥2 is out of scope.
+- **Throughput vs latency (ADR 0003):** two clocks. *Throughput* = one symbol per
+  `T_sym`=35.7 µs (bottleneck stage ≤ T_sym; this is where the ADR 0002 §6 bandwidth wall
+  binds — pipelining does NOT relax it). *Latency* = deliver each symbol within `L_max`
+  (working ~70 µs ≈ 2·T_sym, < real fronthaul tolerance TBD). **`T_proc ≤ 3 µs` is
+  retired** — compute gets up to a full period for throughput, contributes ~6 µs to the
+  latency sum.
+- **vUE is in-box, GPU-resident (ADR 0003 §5):** only the vDU side crosses the NIC
+  fronthaul; vUE side is an in-HBM handoff. NIC budget = vDU side only (layer-domain IQ).
+- **Process topology + DOCA deferral (ADR 0007):** **three in-box processes** — ORU
+  process (NIC + Spec B framing, kernel/DPDK, **DOCA deferred**), ORCA (GPU compute), vUE.
+  North bulk = **host shm + H2D/D2H** (Spec F), justified by small vDU-side volume (~3 GB/s
+  SU 2-cell). ORCA hot path (graph K0–K5) unchanged; only K0 source / K5 sink differ. Behind
+  an `OruTransport` so DOCA/GPUDirect can swap in later (removes the copy). DOCA → deferred-goals #11.
+- **vUE IPC (ADR 0004):** vUE is a **separate in-box process**. **Phase 1 (now):**
+  GPU PHY on PCIe H100 — bulk per-antenna IQ stays in HBM, shared via **CUDA IPC**
+  (+ IPC events); **DPDK shared memory** carries the control plane only. **Phase 2
+  (future):** CPU PHY on **Grace-Hopper** — bulk moves to host over NVLink-C2C via DPDK
+  shm. The two migrations are coupled. Behind a `VueTransport` interface; buffer layout
+  stable across phases.
+- **Scaling (ADR 0003 §6):** cells-per-box bounded by the throughput clock (cost lever —
+  minimize boxes); more boxes = replication (later phase); inter-box comms only if
+  interfering cells split across boxes — partition so each UE's interferer set stays on
+  one box.
+- **Hot-path sync:** CUDA Graph, CPU-controlled DOCA GPUNetIO, indirection-cell double
+  buffering. **No** persistent kernels / doorbells / system-scope flags at µ=1 (ADR 0001).
+- **Spatial:** 64 TRX. DL precodes 16 layers → 64 Tx; UL combines 64 Rx → 16 layers.
+- **Multi-cell:** one GPU box hosts all cells; cross-link channel `H[cell][ue][rx][tx][sc]`;
+  per-UE contributor set (serving + interferers) is configurable, neighbor-limited top-K
+  by default → all-to-all (ADR 0002).
+- **Spatial multiplexing (ADR 0005):** **Phase 1 = SU-MIMO only** (one UE per
+  time-frequency resource; OFDMA scheduling separates UEs; per-resource layers = UE rank
+  ≤4). **MU-MIMO is deferred to a very later phase** — it re-introduces a 16× `H`-read
+  blow-up (→ needs Spec C). SU needs a **per-symbol scheduling/allocation map** from the
+  vDU. All-to-all interference retained either way.
+- **Phase-1 target:** SU-MIMO, **2 cells**, all-to-all interference, grid mobility, all
+  `H` resident as **per-subcarrier FP16** (~0.38 TB/s, ~11% HBM → fits; Spec C deferred),
+  µ=1, single PCIe H100.
+- **Precoding (ADR 0006):** **beam-indexed codebook** resident in GPU memory; vDU supplies
+  `beam_id` per resource at runtime (C-plane, alongside the SU scheduling map). Hot path
+  gathers `precodeBook[beam_id]`→`W` (`64×rank`); UL combine symmetric. **SRS /
+  GPU-computed ZF/MMSE/SVD deferred** (`estim/` dormant; no cuSOLVER in Phase 1).
+- **Mobility:** UE positions on a discrete grid; offline ray-traced per-(cell, grid-point)
+  CIR table; slow-plane lookup (nearest grid point; interp deferred) on move; per-link
+  per-symbol Doppler; handover.
+- **Channel storage (ADR 0008 / Spec G):** the offline table stores **geometric paths
+  (rays)** per (cell, grid-point) — not antenna-CIR or per-SC `H`. **Host-resident**
+  (~324 MB Phase 1); the slow plane expands rays→`H` (array steering + delay DFT) into the
+  GPU-resident `H_dl` (Spec E) on a move. Array-/`numSc`-independent; one ray set serves
+  DL+UL (reciprocity). Distinct from the deferred Spec C (which decides hot-path `H` apply).
+- **Slow plane never touches the hot path**; publishes via atomic write to the indirection cell.
+- **Never stall on a late symbol** — zero-fill missing PRBs and advance (Spec A §A.4).
 
-## Open threads
+## OPEN THREADS (carried over from the design discussion — not yet in the docs)
 
-- **Channel-apply roofline:** channel apply is memory-bandwidth bound, not compute-bound.
-  Phase 1 fits because SU-MIMO plus per-subcarrier FP16 `H` is about 11% HBM. When MU-MIMO,
-  more cells, or larger interferer sets return, Spec C must decide per-subcarrier vs
-  per-PRB-group vs tap-domain application, `H` precision, PRB-group size, and tap count.
-- **Offline CIR-table toolchain:** Spec G is Phase-1 work and generates the offline ray
-  table plus slow-plane ray→`H` expansion. It is distinct from deferred Spec C, which
-  decides how `H` is applied on the hot path.
-- **UL combiner:** resolved by ADR 0006 as codebook gather (`64 → rank`), symmetric with
-  DL precoding. SRS-derived MMSE/MRC weights are deferred.
-- **Implementation-time deferrals:** BFP exponent/scaling for bit-exactness, telemetry wire
-  format, and YAML config loader.
-- **`L_max`:** working placeholder is ~70 µs; final value must be measured or negotiated
-  from real fronthaul tolerance and caps pipeline depth.
+1. **Compute intensity / roofline — channel-apply is MEMORY-BOUND, not compute-bound.**
+   ✅ Now recorded in **ADR 0002 §6** (corrected from the earlier "compute-bound GEMM"
+   framing). Key results, for reference (7 cells × 16 UE = 112 UEs, T=64, R=4, Sc=3276,
+   neighbor K=3, FP16 complex H, 8 FLOP/cMAC, 28,011 sym/s):
+   - Raw compute ≈ 3.0 GFLOP/symbol DL → ~168 TFLOP/s both dirs — fine for H100 tensor.
+   - H read once/symbol, ~no reuse → **AI ≈ 2 FLOP/byte** (batched GEMV); per-SC H ≈
+     1.5 GB/symbol → **~42 TB/s vs 3.35 TB/s HBM** → bandwidth-bound, infeasible as-is.
+   - Resolution: store H **per PRB-group** (~31 MB, fits L2) OR apply **from CIR taps**.
+   - **Still open (→ Spec C):** channel coherence granularity (per-SC vs per-PRB-group vs
+     tap-domain) and the variables that pin the layout — **H precision** (FP16/BF16/INT8),
+     **PRB-group size**, **tap count P** — to be set against a target delay spread.
+     **Deferred out of Phase 1 by ADR 0005** (SU-MIMO + per-SC FP16 fits at ~11% HBM);
+     becomes critical when MU-MIMO / more cells return. See deferred-goals.md.
+
+2. **Offline CIR-table toolchain** — ✅ now drafted in **[Spec G](docs/specs/cir-table-toolchain.md)**:
+   geometric-path (ray) storage, 2-D grid model, on-disk format, and the slow-plane
+   ray→`H` expansion that feeds Spec E `H_dl`. **Distinct from Spec C** (open thread #1 /
+   the coherence-granularity decision): **Spec G *generates* the offline `H` table; Spec C
+   decides *how `H` is applied* on the hot path** (per-SC vs per-PRB-group vs tap-domain).
+   Spec G is **Phase-1 work** (Stages 4 & 8), not deferred. Open items in Spec G §G.12
+   are scenario/toolchain parameters (grid spacing, `P_MAX`, interpolation), not gaps.
+
+3. **UL combiner** — ✅ resolved by **ADR 0006**: combine = `beam_id` codebook gather
+   (`64 → rank`), symmetric with DL precode. SRS-derived MMSE/MRC weights are **deferred**
+   (deferred-goals #7).
+
+4. **Deferred at implementation time:** BFP exponent/scaling for bit-exactness (Spec B.4),
+   telemetry wire format (Spec B.7), YAML config loader.
+
+5. **`L_max` from real fronthaul tolerance** (ADR 0003) — working placeholder ~70 µs;
+   must be measured/negotiated; caps pipeline depth.
 
 ## Working agreement
 
-- Favor design and decisions over code until implementation resumes.
-- Add a new ADR for significant decisions; ADR 0009 is next.
-- Update `docs/deferred-goals.md` whenever a capability is pushed to a later phase.
-- Keep tensor layouts carrying the `cell` dimension from Stage 1 so multi-cell remains an
-  extension rather than a refactor.
-- Intended layout when code resumes: `common/ fh/ orchestr/ dsp/ channel/ estim/ scenario/
-  oru/ vue/ app/ tests/`.
+- It's early — favor design/decisions over code. New significant decisions get an ADR in
+  `docs/decisions/` (sequential numbering; ADR 0010 is next). Deferred scope lives in
+  @docs/deferred-goals.md — update it whenever something is pushed to a later phase.
+- Keep tensor layouts carrying the `cell` dimension from Stage 1 so multi-cell is an
+  extension, not a refactor (MILESTONES note).
+- Intended layout when code resumes: `common/ fh/ orchestr/ dsp/ channel/ estim/
+  scenario/ oru/ vue/ app/ tests/` (see architecture.md § module structure).

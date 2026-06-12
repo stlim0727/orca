@@ -1,19 +1,18 @@
+// Host (CPU) implementation of the K0/K5 converts — also the golden model
+// the CUDA kernels must match bit-exactly (Spec E §E.7).
+
 #include "dsp/convert.hpp"
 
-namespace orca::dsp {
+namespace orca {
+namespace dsp {
 
-void k0IngressConvertCpu(const common::ci16* input, common::cf32* output,
-                         std::size_t elementCount) noexcept {
-  for (std::size_t i = 0; i < elementCount; ++i) {
-    output[i] = common::toCf32(input[i]);
-  }
+void convertK0(const ci16* src, cf32* dst, size_t n) {
+    for (size_t i = 0; i < n; ++i) dst[i] = toCf32(src[i]);
 }
 
-void k5EgressPackCpu(const common::cf32* input, common::ci16* output,
-                     std::size_t elementCount) noexcept {
-  for (std::size_t i = 0; i < elementCount; ++i) {
-    output[i] = common::toCi16(input[i]);
-  }
+void convertK5(const cf32* src, ci16* dst, size_t n) {
+    for (size_t i = 0; i < n; ++i) dst[i] = toCi16(src[i]);
 }
 
-}  // namespace orca::dsp
+}  // namespace dsp
+}  // namespace orca

@@ -1,42 +1,56 @@
 cmake_minimum_required(VERSION 3.20)
-
 project(orca LANGUAGES CXX)
 
-option(EMU_WITH_CUDA "Build CUDA-backed DSP kernels" OFF)
-option(EMU_WITH_DOCA "Build DOCA-backed transports" OFF)
+# Toolchain choice locked in AGENT.md: C++17; CUDA/DOCA behind OFF-able flags.
+option(EMU_WITH_CUDA "Build the CUDA (GPU) backends and kernels" OFF)
+option(EMU_WITH_DOCA "Build the DOCA GPUNetIO backend (deferred, ADR 0007)" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-if(EMU_WITH_DOCA)
-  message(FATAL_ERROR "EMU_WITH_DOCA is deferred for this implementation stage")
-endif()
-
 if(EMU_WITH_CUDA)
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 17)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-  set(CMAKE_CUDA_EXTENSIONS OFF)
+  if(NOT CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES 90)  # H100 (sm_90); override at configure time if needed
+  endif()
 endif()
 
+# Header-only foundations (common/); compiled modules attach as stages land.
 add_library(orca_common INTERFACE)
 target_include_directories(orca_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(orca_dsp STATIC dsp/convert.cpp)
+# DSP kernels — host (CPU) implementations; CUDA variants land behind
+# EMU_WITH_CUDA with the same signatures (Spec E §E.7).
+add_library(orca_dsp STATIC dsp/convert.cpp dsp/precode.cpp dsp/awgn.cpp
+                            dsp/channel_apply.cpp dsp/combine.cpp)
 target_link_libraries(orca_dsp PUBLIC orca_common)
 
+# CUDA K0–K5 kernels (Spec E §E.3-§E.12); compiled only when CUDA is enabled.
 if(EMU_WITH_CUDA)
-  target_sources(orca_dsp PRIVATE dsp/convert.cu)
-  set_source_files_properties(dsp/convert.cu PROPERTIES LANGUAGE CUDA)
-  target_compile_definitions(orca_dsp PUBLIC ORCA_WITH_CUDA=1)
-else()
-  target_compile_definitions(orca_dsp PUBLIC ORCA_WITH_CUDA=0)
+  target_sources(orca_dsp PRIVATE dsp/kernels.cu)
+  target_compile_definitions(orca_dsp PUBLIC EMU_WITH_CUDA)
 endif()
 
-include(CTest)
-if(BUILD_TESTING)
-  add_executable(test_layout tests/test_layout.cpp)
-  target_link_libraries(test_layout PRIVATE orca_dsp)
-  add_test(NAME test_layout COMMAND test_layout)
+# Channel toolchain — Spec G offline CIR-table writer/loader + slow-plane
+# ray→H expansion (Stages 4 & 8; MILESTONES).
+add_library(orca_channel STATIC channel/cir_writer.cpp channel/cir_loader.cpp
+                                 channel/cir_expand.cpp)
+target_link_libraries(orca_channel PUBLIC orca_common)
+
+# Separate ORU process program (ADR 0007) — host build runs an in-memory
+# smoke loop until Linux socket bring-up.
+add_executable(oru_process oru_process/main.cpp)
+target_link_libraries(oru_process PRIVATE orca_common)
+
+# ORCA application — Stage-1 identity hot path over the transport seams.
+add_executable(orca_app app/main.cpp)
+target_link_libraries(orca_app PRIVATE orca_common orca_dsp)
+if(EMU_WITH_CUDA)
+  target_sources(orca_app PRIVATE app/gpu_pipeline.cu)
 endif()
+
+enable_testing()
+add_subdirectory(tests)

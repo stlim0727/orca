@@ -1,25 +1,20 @@
 #pragma once
+// K0 / K5 converts behind one signature (AGENT.md 1f; Spec E §E.7).
+// Host config: CPU loops (this TU). Target config: CUDA kernels with the
+// same signatures land behind EMU_WITH_CUDA — callers never change.
 
 #include <cstddef>
 
 #include "common/complex.hpp"
 
-namespace orca::dsp {
+namespace orca {
+namespace dsp {
 
-void k0IngressConvertCpu(const common::ci16* input, common::cf32* output,
-                         std::size_t elementCount) noexcept;
+// K0 — ingress convert: ci16 → cf32, flat n elements.
+void convertK0(const ci16* src, cf32* dst, size_t n);
 
-void k5EgressPackCpu(const common::cf32* input, common::ci16* output,
-                     std::size_t elementCount) noexcept;
+// K5 — egress pack: cf32 → ci16, saturating round-to-nearest-even, flat.
+void convertK5(const cf32* src, ci16* dst, size_t n);
 
-#if ORCA_WITH_CUDA
-// Launches flat Spec-E K0/K5 conversion kernels on the supplied CUDA stream. The stream is
-// passed as void* so non-CUDA translation units do not need CUDA headers.
-void k0IngressConvertCuda(const common::ci16* input, common::cf32* output,
-                          std::size_t elementCount, void* stream = nullptr);
-
-void k5EgressPackCuda(const common::cf32* input, common::ci16* output,
-                      std::size_t elementCount, void* stream = nullptr);
-#endif
-
-}  // namespace orca::dsp
+}  // namespace dsp
+}  // namespace orca

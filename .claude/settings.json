@@ -1,0 +1,19 @@
+{
+  "defaultMode": "auto",
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(Get-CimInstance *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(Get-Content *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-WindowsOptionalFeature *)",
+      "PowerShell(wsl --status)",
+      "PowerShell(wsl --list *)",
+      "PowerShell(codex login status)",
+      "PowerShell(codex exec --sandbox read-only *)",
+      "Bash(codex exec --sandbox read-only *)"
+    ]
+  }
+}

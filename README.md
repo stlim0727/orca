@@ -72,6 +72,7 @@ costs to bring back are tracked in [`docs/deferred-goals.md`](docs/deferred-goal
 | [`docs/decisions/0006-beam-indexed-precoding.md`](docs/decisions/0006-beam-indexed-precoding.md) | **ADR 0006** — beam-indexed precoding (resident codebook, `beam_id` from vDU); SRS deferred. |
 | [`docs/decisions/0007-process-topology-doca-deferral.md`](docs/decisions/0007-process-topology-doca-deferral.md) | **ADR 0007** — three-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north ingress. |
 | [`docs/decisions/0008-geometric-path-channel-storage.md`](docs/decisions/0008-geometric-path-channel-storage.md) | **ADR 0008** — store the offline channel as geometric paths (rays), not antenna-CIR or per-SC `H`; slow-plane ray→`H` expansion; host-resident table. Realized by Spec G. |
+| [`docs/decisions/0009-cell-count-scaling.md`](docs/decisions/0009-cell-count-scaling.md) | **ADR 0009** — cell-count scaling: single-box ceiling (`C²` `H`-bandwidth wall ≈ 6 cells, L2 cliff ≈ 4; neighbor-limit → Spec C) and the multi-box strategy (interferer-aware partitioning; NVLink-halo vs InfiniBand-clean-partition tiers). |
 | [`docs/deferred-goals.md`](docs/deferred-goals.md) | Register of deferred capabilities + the compromises/enabling work to re-enable each. |
 | [`docs/MILESTONES.md`](docs/MILESTONES.md) | Stage-by-stage implementation plan and hot-path invariants. |
 
