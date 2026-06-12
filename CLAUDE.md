@@ -30,6 +30,7 @@ the source of truth** — read them before proposing anything:
 - @docs/decisions/0006-beam-indexed-precoding.md — ADR 0006: beam_id codebook precoding; SRS deferred.
 - @docs/decisions/0007-process-topology-doca-deferral.md — ADR 0007: 3-process topology (ORU/ORCA/vUE); DOCA deferred; host-staged north.
 - @docs/decisions/0008-geometric-path-channel-storage.md — ADR 0008: store geometric paths (rays), not antenna-CIR/per-SC H; slow-plane ray→H expansion; host-resident table.
+- @docs/decisions/0009-cell-count-scaling.md — ADR 0009: cell-count scaling — single-box ceiling (C² H-BW wall ≈6 cells, L2 cliff ≈4; mitigations neighbor-limit→Spec C) and multi-box strategy (interferer-aware partitioning; NVLink-halo vs IB-clean-partition tiers).
 - @docs/specs/oru-interface-contract.md — Spec F: ORU↔ORCA interface (north) — host shm bulk + H2D/D2H, DPDK control, alloc/beam map.
 - @docs/specs/cir-table-toolchain.md — Spec G: offline OptiX→CIR-table toolchain + on-disk format; slow-plane ray→H expansion (feeds Spec E `H_dl`). Distinct from Spec C.
 - @docs/deferred-goals.md — register of deferred goals + the compromises to re-enable each.
@@ -127,7 +128,7 @@ the source of truth** — read them before proposing anything:
 ## Working agreement
 
 - It's early — favor design/decisions over code. New significant decisions get an ADR in
-  `docs/decisions/` (sequential numbering; ADR 0009 is next). Deferred scope lives in
+  `docs/decisions/` (sequential numbering; ADR 0010 is next). Deferred scope lives in
   @docs/deferred-goals.md — update it whenever something is pushed to a later phase.
 - Keep tensor layouts carrying the `cell` dimension from Stage 1 so multi-cell is an
   extension, not a refactor (MILESTONES note).

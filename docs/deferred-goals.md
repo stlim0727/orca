@@ -77,15 +77,19 @@ against a target delay spread / coherence bandwidth.
 <a id="more-cells"></a>
 
 **Status:** Phase 1 fixed at **2 cells**. Cell count is the cost lever (ADR 0003 §6):
-maximize cells/box, minimize boxes.
+maximize cells/box, minimize boxes. Full scaling curve + roadmap in
+[ADR 0009](decisions/0009-cell-count-scaling.md).
 
 **Considerations / compromises:**
-- Even under SU, per-SC `H` BW scales with `C²` (victims × contributors, all-to-all); at
-  some `C` it approaches HBM → apply **Spec C** or **neighbor-limit** the interferer set
-  (drop all-to-all → top-K), **compromise = interference-model fidelity**.
-- Beyond one GPU's memory/compute → **replicate across boxes (#5)**.
+- Even under SU, per-SC `H` BW scales with `C²` (victims × contributors, all-to-all); the
+  HBM wall lands at **≈ 6 cells**, with an earlier **L2-residency cliff at ≈ 4 cells**
+  (steady state degrades to cold) — ADR 0009 §A.1/§A.2. Apply **Spec C** (per-PRB-group /
+  tap-domain) or **neighbor-limit** the interferer set (`C²` → `C·(K+1)`, linear),
+  **compromise = interference-model fidelity / sub-group selectivity**.
+- Beyond one GPU's memory/compute → **replicate across boxes (#5)** with interferer-aware
+  partitioning (ADR 0009 Part B).
 
-**Refs:** ADR 0003 §6, ADR 0002 §3/§6.
+**Refs:** [ADR 0009](decisions/0009-cell-count-scaling.md), ADR 0003 §6, ADR 0002 §3/§6.
 
 ## µ≥2 / FR2
 <a id="fr2"></a>
@@ -104,16 +108,21 @@ maximize cells/box, minimize boxes.
 ## Multi-box scaling + inter-box comms
 <a id="multi-box"></a>
 
-**Status:** very later phase (ADR 0003 §6). Phase 1 is single-box.
+**Status:** very later phase (ADR 0003 §6; full strategy in
+[ADR 0009 Part B](decisions/0009-cell-count-scaling.md)). Phase 1 is single-box.
 
 **Considerations / compromises:**
 - **Partition cells across boxes so each UE's interferer set stays on one box** → avoids
   per-symbol cross-box exchange. **Compromise = partitioning constraint** on cell
-  placement.
-- If interferers must span boxes → **exchange per-symbol IQ/channel state within the
-  deadline** — hard synchronization; **compromise = added latency / a tighter `L_max`.**
+  placement. (Neighbor-limiting makes interference short-range → geographic clusters cut
+  cleanly — ADR 0009 §B.1.)
+- If interferers must span boxes → **exchange per-symbol antenna-domain `y` within the
+  deadline** (~47 GB/s/ghost-cell) — hard synchronization; tractable only over NVLink
+  (single-node, Tier 1); multi-node IB must partition cleanly (Tier 2). **Compromise =
+  added latency / a tighter `L_max`**, or a fidelity cut for dense cross-node interference
+  (Tier 3). See ADR 0009 §B.2–§B.4.
 
-**Refs:** ADR 0003 §6, ADR 0002 §1.
+**Refs:** [ADR 0009](decisions/0009-cell-count-scaling.md) (Part B), ADR 0003 §6, ADR 0002 §1.
 
 ## vUE Phase 2 — CPU PHY / Grace-Hopper
 <a id="vue-phase2"></a>
