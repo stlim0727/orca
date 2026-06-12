@@ -53,6 +53,11 @@ add_executable(test_cir_table test_cir_table.cpp)
 target_link_libraries(test_cir_table PRIVATE orca_common orca_channel)
 add_test(NAME cir_table COMMAND test_cir_table)
 
+# Spec G §G.8 Doppler handoff (header-only scenario math).
+add_executable(test_doppler_handoff test_doppler_handoff.cpp)
+target_link_libraries(test_doppler_handoff PRIVATE orca_common)
+add_test(NAME doppler_handoff COMMAND test_doppler_handoff)
+
 # Cross-process IPC test (OruShm + VueShm, Linux shm backends).
 # The test file compiles on any platform; the actual fork()-based IPC paths are
 # guarded by #ifdef __linux__ so non-Linux builds pass trivially.
