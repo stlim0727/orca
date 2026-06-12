@@ -124,7 +124,9 @@ static void testDlPipeline(Pipeline& p) {
 }
 
 static void testUlPipeline(Pipeline& p) {
-    // UL scheduling: only cell0 ← ue3 on sc [0, 600) (no interference there).
+    // UL scheduling: only cell0 serves ue3 on sc [0, 600). Under all-to-all
+    // UL channel-apply, every cell hears that UE through its cross-link;
+    // only cell0 is combined below because it is the sole UL allocation.
     Alloc ul{0, 3, 0, 600, 1, 1, {0, 0, 0, 0}};
     CHECK(buildVictimMap(&ul, 1, 1, p.vUl.data()) == 1);
 
@@ -134,15 +136,18 @@ static void testUlPipeline(Pipeline& p) {
         p.xul[layout::idxXul(3, 1, sc)] = cf32{0.0f, 2.0f};
     }
 
-    // K3 (reciprocity, H cell0→ue3 = 0.5 everywhere, rotor 1):
+    // K3 (reciprocity):
     //   r_ul[0][rxRu][sc] = 0.5·1 + 0.5·2j = 0.5 + 1j on every RU antenna.
+    //   r_ul[1][rxRu][sc] = j·(0.25·1 + 0.25·2j) = -0.5 + 0.25j,
+    //   the all-to-all cross-link heard at cell1.
     const uint8_t ueTxToRx[2] = {0, 1};
     CHECK(dsp::channelApplyUlGolden(p.H.data(), p.xul.data(), p.vUl.data(),
                                     p.rot.data(), ueTxToRx, 0, 0, 0.0f,
                                     p.rul.data()));
     CHECK(p.rul[layout::idxRul(0, 33, 100)].re == 0.5f);
     CHECK(p.rul[layout::idxRul(0, 33, 100)].im == 1.0f);
-    CHECK(p.rul[layout::idxRul(1, 33, 100)].re == 0.0f);  // cell1 hears no one
+    CHECK(p.rul[layout::idxRul(1, 33, 100)].re == -0.5f);
+    CHECK(p.rul[layout::idxRul(1, 33, 100)].im == 0.25f);
 
     // K4 with beam 0: z = Σ_rx 0.125·(0.5 + 1j) = 64·0.125·(0.5+1j) = 4 + 8j.
     CHECK(dsp::combineGolden(p.rul.data(), p.book, &ul, 1, p.z.data()) == 0);
