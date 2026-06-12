@@ -63,6 +63,11 @@ add_executable(test_grid test_grid.cpp)
 target_link_libraries(test_grid PRIVATE orca_common)
 add_test(NAME grid COMMAND test_grid)
 
+# Spec G §G.8 slow-plane channel refresh driver (grid → CIR lookup → expandLink).
+add_executable(test_channel_refresh test_channel_refresh.cpp)
+target_link_libraries(test_channel_refresh PRIVATE orca_common orca_channel)
+add_test(NAME channel_refresh COMMAND test_channel_refresh)
+
 # Cross-process IPC test (OruShm + VueShm, Linux shm backends).
 # The test file compiles on any platform; the actual fork()-based IPC paths are
 # guarded by #ifdef __linux__ so non-Linux builds pass trivially.
