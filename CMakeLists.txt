@@ -48,6 +48,9 @@ target_link_libraries(oru_process PRIVATE orca_common)
 # ORCA application — Stage-1 identity hot path over the transport seams.
 add_executable(orca_app app/main.cpp)
 target_link_libraries(orca_app PRIVATE orca_common orca_dsp)
+if(EMU_WITH_CUDA)
+  target_sources(orca_app PRIVATE app/gpu_pipeline.cu)
+endif()
 
 enable_testing()
 add_subdirectory(tests)
