@@ -21,6 +21,7 @@
 
 #include "channel/cir_table.hpp"  // PathRecord
 #include "common/dims.hpp"
+#include "scenario/vec3.hpp"
 
 namespace orca {
 namespace scenario {
@@ -28,20 +29,13 @@ namespace scenario {
 constexpr double kSpeedOfLight = 299792458.0;  // m/s
 constexpr double kTwoPi        = 6.283185307179586476925286766559;
 
-// A velocity / direction in the UE-array frame (m/s for velocity, unitless for
-// a direction). Right-handed: +z up, az in the x-y plane from +x, el from x-y.
-struct Vec3 {
-    double x, y, z;
-};
+// `Vec3` and `dot3` live in scenario/vec3.hpp (shared with the grid model).
+// Here a Vec3 is a velocity (m/s) or unit direction in the UE-array frame.
 
 // Unit arrival direction from (az, el), UE-array frame (Spec G §G.8).
 inline Vec3 aoaUnit(double azRad, double elRad) {
     const double ce = std::cos(elRad);
     return Vec3{ce * std::cos(azRad), ce * std::sin(azRad), std::sin(elRad)};
-}
-
-inline double dot3(const Vec3& a, const Vec3& b) {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 // Doppler shift f_d (Hz) for one link: positive when the UE moves toward the

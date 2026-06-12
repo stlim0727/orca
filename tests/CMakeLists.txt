@@ -58,6 +58,11 @@ add_executable(test_doppler_handoff test_doppler_handoff.cpp)
 target_link_libraries(test_doppler_handoff PRIVATE orca_common)
 add_test(NAME doppler_handoff COMMAND test_doppler_handoff)
 
+# Spec G §G.3 UE grid model (header-only scenario geometry).
+add_executable(test_grid test_grid.cpp)
+target_link_libraries(test_grid PRIVATE orca_common)
+add_test(NAME grid COMMAND test_grid)
+
 # Cross-process IPC test (OruShm + VueShm, Linux shm backends).
 # The test file compiles on any platform; the actual fork()-based IPC paths are
 # guarded by #ifdef __linux__ so non-Linux builds pass trivially.
