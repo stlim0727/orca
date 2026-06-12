@@ -127,6 +127,10 @@ class GpuPipeline {
     cf32*    d_z_        = nullptr;  // [N][kZElems]    cf32   K4 out / K5 in
     ci16*    d_zPacked_  = nullptr;  // [N][kZElems]    ci16   K5 out  (D2H staging)
 
+    // K2 split-K partial-sum scratch (Spec E §E.12); one buffer, reused (K2's two
+    // passes are stream-ordered, never concurrent across symbols on dlStream_).
+    cf32*    d_k2Scratch_ = nullptr;  // [kK2ScratchElems] cf32
+
     // ── Per-symbol control (updated each symbol) ──────────────────────────────
     uint16_t* d_victim_    = nullptr;   // [C * numScP]  DL victim map
     uint16_t* d_ulContrib_ = nullptr;   // [C * numScP]  UL contributor map

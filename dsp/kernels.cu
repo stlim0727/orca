@@ -1,10 +1,12 @@
 // Spec E §E.3-§E.12 — K0–K5 CUDA hot-path kernels (Phase 1, SU-MIMO, 2 cells).
 // All kernels use static worst-case grids (§E.8) for CUDA-graph compatibility:
-//   K0/K5: flat over element count    K2/K3: (C, sc-tiles [, rx-tiles])
-//   K1/K4: (MAX_ALLOCS, sc-tiles)     per-thread guards handle idle blocks.
+//   K0/K5: flat over element count    K2: split-K (C, sc-tiles, kK2SplitK)+reduce
+//   K3: (C, rx-tiles, sc-tiles)       K1/K4: (MAX_ALLOCS, sc-tiles)
+//   per-thread guards handle idle blocks.
 //
-// TODO (performance): K2 split-K over tx (SPLITK=16, §E.12) for cold-symbol
-// HBM saturation.  Functional correctness does not depend on it.
+// K2 uses split-K over tx (§E.12): the naive 26-block launch under-saturates HBM
+// (~63 µs cold ≫ T_sym); 416 blocks reach ~7 µs cold.  The split is reduced in a
+// second pass in fixed order (deterministic, Spec G §G.10).
 
 #ifdef EMU_WITH_CUDA
 
@@ -159,78 +161,124 @@ void launchK1(const cf32* d_x_dl, cf32* d_y, const cf32* d_precode,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// K2 — channel-apply DL (Spec E §E.5, variant (a): rx in-thread)
-// gridDim = (C, ceil(numScP/kTile))   — static for CUDA graph (§E.8)
+// K2 — channel-apply DL (Spec E §E.5 variant (a) + split-K over tx, §E.12)
 //
-// Each block owns one (cell c, sc-tile).  Per thread (one sc), loop over all
-// contributor cells c' and all tx to build acc[numRx].
+// Pass 1 (k2Partial): gridDim = (C, ceil(numScP/kTile), kK2SplitK).  Each block
+// owns (cell c, sc-tile, tx-slice).  Per thread (one sc) it sums its tx-slice —
+// over both contributor cells, with the per-(c2,u) Doppler applied (Doppler is
+// constant over tx, so it distributes over the split) — into the partial buffer.
+//
+// Pass 2 (k2Reduce): gridDim = (C, ceil(numScP/kTile)).  Per thread sums the
+// kK2SplitK partials in fixed slice order (deterministic, Spec G §G.10), adds the
+// AWGN draw (golden keying, §E.7), and writes r_dl.  r_dl is zero-filled by the
+// launcher first, so unscheduled (u,sc) entries are 0 (matches the CPU golden).
+//
+// scratch layout (sc innermost, coalesced both passes):
+//   d_scratch[((c·numRx + rx)·kK2SplitK + split)·numScP + sc]
 //
 // NOTE: If two cells schedule the same UE at the same sc (unusual in SU-MIMO),
-// both blocks write r_dl[u][...][sc] concurrently.  Both compute the same sum,
-// so the result is correct; the race is benign under this precondition.
+// both blocks produce the same partials/sum for r_dl[u][...][sc] — benign race.
 // ─────────────────────────────────────────────────────────────────────────────
 
-__global__ void k2Kernel(const half2c*   __restrict__ H,
-                          const cf32*     __restrict__ y,
-                          cf32*            __restrict__ r_dl,
-                          const uint16_t* __restrict__ d_victim,
-                          const cf32*     __restrict__ d_doppler,
-                          uint64_t symbolCtr, uint64_t noiseSeed,
-                          float noiseStd) {
+__device__ __forceinline__ size_t k2ScratchIdx(uint32_t c, uint32_t rx,
+                                                uint32_t split, uint32_t sc) {
     using namespace dims;
-    const uint32_t c  = blockIdx.x;
-    const uint32_t sc = blockIdx.y * static_cast<uint32_t>(kTile) + threadIdx.x;
+    return ((static_cast<size_t>(c) * numRx + rx) * kK2SplitK + split) * numScP
+           + sc;
+}
+
+__global__ void k2PartialKernel(const half2c*   __restrict__ H,
+                                 const cf32*     __restrict__ y,
+                                 cf32*            __restrict__ scratch,
+                                 const uint16_t* __restrict__ d_victim,
+                                 const cf32*     __restrict__ d_doppler) {
+    using namespace dims;
+    const uint32_t c     = blockIdx.x;
+    const uint32_t sc    = blockIdx.y * static_cast<uint32_t>(kTile) + threadIdx.x;
+    const uint32_t split = blockIdx.z;
     if (sc >= numSc) return;
+
+    float p_re[numRx], p_im[numRx];
+    for (uint32_t rx = 0; rx < numRx; ++rx) { p_re[rx] = 0.f; p_im[rx] = 0.f; }
+
     const uint16_t v = d_victim[c * numScP + sc];
-    if (v == kNoVictim) return;
-    const uint32_t u = v;
-
-    // Initialise accumulators with AWGN (dir=0, ue=u; golden keying, §E.7)
-    const uint64_t sampleIdx = static_cast<uint64_t>(symbolCtr) * numScP + sc;
-    float acc_re[numRx], acc_im[numRx];
-    for (uint32_t rx = 0; rx < numRx; ++rx) {
-        if (noiseStd != 0.f) {
-            awgnSample(noiseSeed, awgnSubseq(0, u, rx), sampleIdx, noiseStd,
-                       acc_re[rx], acc_im[rx]);
-        } else {
-            acc_re[rx] = 0.f;
-            acc_im[rx] = 0.f;
-        }
-    }
-
-    // Accumulate all contributor cells c' (Spec E §E.5 outer Σ)
-    for (uint32_t c2 = 0; c2 < C; ++c2) {
-        const cf32 dopp = d_doppler[c2 * U + u];
-        for (uint32_t tx = 0; tx < numTx; ++tx) {
-            // Load y once per (c2, tx); reuse for numRx rx values (variant a)
-            const cf32 yv = y[(c2 * numTx + tx) * numScP + sc];
-            for (uint32_t rx = 0; rx < numRx; ++rx) {
-                float H_re, H_im;
-                loadH(H,
-                      (((static_cast<unsigned long long>(c2) * U + u) * numRx + rx)
-                       * numTx + tx) * numScP + sc,
-                      H_re, H_im);
-                // partial = H * y
-                const float p_re = H_re * yv.re - H_im * yv.im;
-                const float p_im = H_re * yv.im + H_im * yv.re;
-                // acc += dopp * partial
-                acc_re[rx] += dopp.re * p_re - dopp.im * p_im;
-                acc_im[rx] += dopp.re * p_im + dopp.im * p_re;
+    if (v != kNoVictim) {
+        const uint32_t u     = v;
+        const uint32_t txBeg = split * (numTx / kK2SplitK);
+        const uint32_t txEnd = txBeg + (numTx / kK2SplitK);
+        for (uint32_t c2 = 0; c2 < C; ++c2) {
+            const cf32 dopp = d_doppler[c2 * U + u];
+            for (uint32_t tx = txBeg; tx < txEnd; ++tx) {
+                // Load y once per (c2, tx); reuse for numRx rx values (variant a)
+                const cf32 yv = y[(c2 * numTx + tx) * numScP + sc];
+                for (uint32_t rx = 0; rx < numRx; ++rx) {
+                    float H_re, H_im;
+                    loadH(H,
+                          (((static_cast<unsigned long long>(c2) * U + u) * numRx
+                            + rx) * numTx + tx) * numScP + sc,
+                          H_re, H_im);
+                    const float pr = H_re * yv.re - H_im * yv.im;  // H·y
+                    const float pi = H_re * yv.im + H_im * yv.re;
+                    p_re[rx] += dopp.re * pr - dopp.im * pi;        // ·doppler
+                    p_im[rx] += dopp.re * pi + dopp.im * pr;
+                }
             }
         }
     }
 
     for (uint32_t rx = 0; rx < numRx; ++rx)
-        r_dl[(u * numRx + rx) * numScP + sc] = cf32{acc_re[rx], acc_im[rx]};
+        scratch[k2ScratchIdx(c, rx, split, sc)] = cf32{p_re[rx], p_im[rx]};
+}
+
+__global__ void k2ReduceKernel(const cf32*     __restrict__ scratch,
+                               cf32*            __restrict__ r_dl,
+                               const uint16_t* __restrict__ d_victim,
+                               uint64_t symbolCtr, uint64_t noiseSeed,
+                               float noiseStd) {
+    using namespace dims;
+    const uint32_t c  = blockIdx.x;
+    const uint32_t sc = blockIdx.y * static_cast<uint32_t>(kTile) + threadIdx.x;
+    if (sc >= numSc) return;
+    const uint16_t v = d_victim[c * numScP + sc];
+    if (v == kNoVictim) return;  // r_dl already zero-filled by the launcher
+    const uint32_t u = v;
+
+    const uint64_t sampleIdx = static_cast<uint64_t>(symbolCtr) * numScP + sc;
+    for (uint32_t rx = 0; rx < numRx; ++rx) {
+        float acc_re, acc_im;
+        if (noiseStd != 0.f) {
+            awgnSample(noiseSeed, awgnSubseq(0, u, rx), sampleIdx, noiseStd,
+                       acc_re, acc_im);
+        } else {
+            acc_re = 0.f;
+            acc_im = 0.f;
+        }
+        // Fixed-order reduction over the tx-slices (deterministic).
+        for (uint32_t split = 0; split < kK2SplitK; ++split) {
+            const cf32 p = scratch[k2ScratchIdx(c, rx, split, sc)];
+            acc_re += p.re;
+            acc_im += p.im;
+        }
+        r_dl[(u * numRx + rx) * numScP + sc] = cf32{acc_re, acc_im};
+    }
 }
 
 void launchK2(const half2c* d_H, const cf32* d_y, cf32* d_r_dl,
-              const uint16_t* d_victim, const cf32* d_doppler,
+              const uint16_t* d_victim, const cf32* d_doppler, cf32* d_scratch,
               uint64_t symbolCtr, uint64_t noiseSeed, float noiseStd,
               cudaStream_t s) {
-    dim3 grid(dims::C, (dims::numScP + kTile - 1) / kTile);
-    k2Kernel<<<grid, kTile, 0, s>>>(d_H, d_y, d_r_dl, d_victim, d_doppler,
-                                     symbolCtr, noiseSeed, noiseStd);
+    // Zero-fill r_dl so unscheduled (u, sc) entries are 0 (matches CPU golden).
+    cudaMemsetAsync(d_r_dl, 0,
+                    sizeof(cf32) * static_cast<size_t>(dims::U) * dims::numRx
+                        * dims::numScP,
+                    s);
+    const uint32_t scTiles = (dims::numScP + kTile - 1) / kTile;
+    dim3 gridP(dims::C, scTiles, kK2SplitK);
+    k2PartialKernel<<<gridP, kTile, 0, s>>>(d_H, d_y, d_scratch, d_victim,
+                                            d_doppler);
+    dim3 gridR(dims::C, scTiles);
+    k2ReduceKernel<<<gridR, kTile, 0, s>>>(d_scratch, d_r_dl, d_victim,
+                                           symbolCtr, noiseSeed, noiseStd);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

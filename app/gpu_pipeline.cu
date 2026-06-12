@@ -33,6 +33,7 @@ void GpuPipeline::freeAll() {
     fdev(d_rUl_);      d_rUl_      = nullptr;
     fdev(d_z_);        d_z_        = nullptr;
     fdev(d_zPacked_);  d_zPacked_  = nullptr;
+    fdev(d_k2Scratch_); d_k2Scratch_ = nullptr;
 
     fdev(d_victim_);    d_victim_    = nullptr;
     fdev(d_ulContrib_); d_ulContrib_ = nullptr;
@@ -71,6 +72,9 @@ bool GpuPipeline::create(uint32_t numBeams) {
     if (!allocDev((void**)&d_rUl_,     sizeof(cf32)   * N * kRulElems))  goto fail;
     if (!allocDev((void**)&d_z_,       sizeof(cf32)   * N * kZElems))    goto fail;
     if (!allocDev((void**)&d_zPacked_, sizeof(ci16)   * N * kZElems))    goto fail;
+
+    // K2 split-K scratch (single buffer, reused across symbols — Spec E §E.12)
+    if (!allocDev((void**)&d_k2Scratch_, sizeof(cf32) * kK2ScratchElems)) goto fail;
 
     // Per-symbol control
     if (!allocDev((void**)&d_victim_,    sizeof(uint16_t) * dims::C * dims::numScP)) goto fail;
@@ -211,7 +215,7 @@ void GpuPipeline::launchDl(uint32_t slotIdx, uint64_t symbolCtr,
     launchK2(d_HdlActiveCopy_,
              d_y_       + slotIdx * kYElems,
              d_rDl_     + slotIdx * kRdlElems,
-             d_victim_, d_doppler_,
+             d_victim_, d_doppler_, d_k2Scratch_,
              symbolCtr, noiseSeed, noiseStd, dlStream_);
 }
 
