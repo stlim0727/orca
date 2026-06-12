@@ -73,6 +73,11 @@ add_executable(test_association test_association.cpp)
 target_link_libraries(test_association PRIVATE orca_common orca_channel)
 add_test(NAME association COMMAND test_association)
 
+# Scenario state container (grid + refresh + association + Doppler, on-move sync).
+add_executable(test_scenario_state test_scenario_state.cpp)
+target_link_libraries(test_scenario_state PRIVATE orca_common orca_channel)
+add_test(NAME scenario_state COMMAND test_scenario_state)
+
 # Cross-process IPC test (OruShm + VueShm, Linux shm backends).
 # The test file compiles on any platform; the actual fork()-based IPC paths are
 # guarded by #ifdef __linux__ so non-Linux builds pass trivially.
