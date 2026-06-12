@@ -193,7 +193,8 @@ void GpuPipeline::uploadSymbol(uint32_t slotIdx,
 
 // ── stream-ordered kernel launches ───────────────────────────────────────────
 
-void GpuPipeline::launchDl(uint32_t slotIdx, float noiseStd, uint64_t noiseSeed) {
+void GpuPipeline::launchDl(uint32_t slotIdx, uint64_t symbolCtr,
+                           float noiseStd, uint64_t noiseSeed) {
     // K0: ci16 → cf32  (reads d_xDlRaw_[slot], writes d_xDl_[slot])
     launchK0(d_xDlRaw_ + slotIdx * kXdlElems,
              d_xDl_    + slotIdx * kXdlElems,
@@ -211,16 +212,17 @@ void GpuPipeline::launchDl(uint32_t slotIdx, float noiseStd, uint64_t noiseSeed)
              d_y_       + slotIdx * kYElems,
              d_rDl_     + slotIdx * kRdlElems,
              d_victim_, d_doppler_,
-             noiseSeed, noiseStd, dlStream_);
+             symbolCtr, noiseSeed, noiseStd, dlStream_);
 }
 
-void GpuPipeline::launchUl(uint32_t slotIdx, float noiseStd, uint64_t noiseSeed) {
+void GpuPipeline::launchUl(uint32_t slotIdx, uint64_t symbolCtr,
+                           float noiseStd, uint64_t noiseSeed) {
     // K3: channel-apply UL  (reads d_xUl_[slot], writes d_rUl_[slot])
     launchK3(d_HdlActiveCopy_,
              d_xUl_     + slotIdx * kXulElems,
              d_rUl_     + slotIdx * kRulElems,
              d_ulContrib_, d_doppler_, d_ueTxToRx_,
-             noiseSeed, noiseStd, ulStream_);
+             symbolCtr, noiseSeed, noiseStd, ulStream_);
 
     // K4: UL combine  (reads d_rUl_[slot], writes d_z_[slot])
     launchK4(d_rUl_    + slotIdx * kRulElems,

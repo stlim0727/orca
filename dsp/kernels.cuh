@@ -28,9 +28,11 @@ void launchK1(const cf32* d_x_dl, cf32* d_y, const cf32* d_precode,
 // d_y       = y[C][numTx][numScP] cf32.
 // d_victim  = victimMap[C][numScP] uint16_t (0xffff = unscheduled).
 // d_doppler = doppler[C][U] cf32.
+// symbolCtr keys the AWGN sampleIdx (= symbolCtr·numScP + sc) per the Philox
+// noise contract (common/philox.hpp); must match the CPU golden's symbol index.
 void launchK2(const half2c* d_H, const cf32* d_y, cf32* d_r_dl,
               const uint16_t* d_victim, const cf32* d_doppler,
-              uint64_t noiseSeed, float noiseStd,
+              uint64_t symbolCtr, uint64_t noiseSeed, float noiseStd,
               cudaStream_t stream = nullptr);
 
 // K3 — channel-apply UL, reciprocity from H_dl, RXT=8 rx tile (Spec E §E.6).
@@ -40,7 +42,7 @@ void launchK2(const half2c* d_H, const cf32* d_y, cf32* d_r_dl,
 void launchK3(const half2c* d_H, const cf32* d_x_ul, cf32* d_r_ul,
               const uint16_t* d_ulContrib, const cf32* d_doppler,
               const uint8_t* d_ueTxToRx,
-              uint64_t noiseSeed, float noiseStd,
+              uint64_t symbolCtr, uint64_t noiseSeed, float noiseStd,
               cudaStream_t stream = nullptr);
 
 // K4 — UL combine (Spec E §E.6).

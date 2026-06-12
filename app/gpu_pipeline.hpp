@@ -67,12 +67,15 @@ class GpuPipeline {
     // Stream-ordered DL: K0 (ci16→cf32) → K1 (precode) → K2 (channel apply).
     // Reads d_xDlRaw_[slotIdx], d_precodeBook_, d_Hdl_active_ (host copy).
     // Writes d_rDlSlot(slotIdx).
-    void launchDl(uint32_t slotIdx, float noiseStd = 1.f, uint64_t noiseSeed = 12345);
+    // symbolCtr keys the per-symbol AWGN draw (Philox contract, common/philox.hpp).
+    void launchDl(uint32_t slotIdx, uint64_t symbolCtr,
+                  float noiseStd = 1.f, uint64_t noiseSeed = 12345);
 
     // Stream-ordered UL: K3 (channel apply) → K4 (combine) → K5 (cf32→ci16).
     // Reads d_xUlSlot(slotIdx), d_Hdl_active_ (host copy).
     // Writes d_zPackedSlot(slotIdx); call readUl() to D2H.
-    void launchUl(uint32_t slotIdx, float noiseStd = 1.f, uint64_t noiseSeed = 12345);
+    void launchUl(uint32_t slotIdx, uint64_t symbolCtr,
+                  float noiseStd = 1.f, uint64_t noiseSeed = 12345);
 
     // Synchronise ulStream_ and D2H z_packed → z_host.
     // z_host: C*rankMax*numScP ci16

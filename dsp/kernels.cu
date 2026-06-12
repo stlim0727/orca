@@ -46,18 +46,38 @@ __device__ __forceinline__ int16_t satRound16(float x) {
     return static_cast<int16_t>(r);
 }
 
-// Philox per-sample AWGN seeded exactly as the CPU golden model (awgn.hpp).
-// subseq = (dir << 32) | (ue << 16) | rx;  offset = sc.
+// Per-stream subsequence, matching the CPU golden (dsp/awgn.hpp §awgnSubsequence):
+//   (dir << 32) | (ue << 8) | rx.
+__device__ __forceinline__ uint64_t awgnSubseq(uint32_t dir, uint32_t ue,
+                                               uint32_t rx) {
+    return (static_cast<uint64_t>(dir) << 32) |
+           (static_cast<uint64_t>(ue) << 8) |
+            static_cast<uint64_t>(rx);
+}
+
+// One complex N(0, std²) draw, faithful to the Philox noise contract
+// (common/philox.hpp): cuRAND's Philox block matches Random123 at the integer
+// layer (KAT-verified on the CPU side), so we take the raw u32 outputs x0,x1 of
+// block `sampleIdx` and apply the contract's OWN mapping — the (x+1)·2⁻³² uniform
+// and a double-precision Box–Muller. We deliberately do NOT use curand_normal2:
+// its uniform + Box–Muller differ from the contract and would not match the
+// golden model. Equivalent CPU call: awgnSample(seed, subseq, sampleIdx, std),
+// with sampleIdx = symbolCtr·numScP + sc (philox.hpp: offset = 4·sampleIdx).
 __device__ __forceinline__ void awgnSample(uint64_t seed, uint64_t subseq,
-                                            uint32_t sc, float noiseStd,
+                                            uint64_t sampleIdx, float noiseStd,
                                             float& re, float& im) {
     curandStatePhilox4_32_10_t st;
     curand_init(seed,
                 static_cast<unsigned long long>(subseq),
-                static_cast<unsigned long long>(sc), &st);
-    float2 n = curand_normal2(&st);
-    re = n.x * noiseStd;
-    im = n.y * noiseStd;
+                4ull * sampleIdx, &st);
+    const uint32_t x0 = curand(&st);
+    const uint32_t x1 = curand(&st);
+    const double u1 = (static_cast<double>(x0) + 1.0) * (1.0 / 4294967296.0);
+    const double u2 = (static_cast<double>(x1) + 1.0) * (1.0 / 4294967296.0);
+    const double r  = sqrt(-2.0 * log(u1));
+    const double t  = 6.283185307179586476925286766559 * u2;  // 2π·u2
+    re = static_cast<float>(r * cos(t)) * noiseStd;
+    im = static_cast<float>(r * sin(t)) * noiseStd;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -155,7 +175,8 @@ __global__ void k2Kernel(const half2c*   __restrict__ H,
                           cf32*            __restrict__ r_dl,
                           const uint16_t* __restrict__ d_victim,
                           const cf32*     __restrict__ d_doppler,
-                          uint64_t noiseSeed, float noiseStd) {
+                          uint64_t symbolCtr, uint64_t noiseSeed,
+                          float noiseStd) {
     using namespace dims;
     const uint32_t c  = blockIdx.x;
     const uint32_t sc = blockIdx.y * static_cast<uint32_t>(kTile) + threadIdx.x;
@@ -164,11 +185,17 @@ __global__ void k2Kernel(const half2c*   __restrict__ H,
     if (v == kNoVictim) return;
     const uint32_t u = v;
 
-    // Initialise accumulators with AWGN (dir=0, subseq=(u<<16)|rx)
+    // Initialise accumulators with AWGN (dir=0, ue=u; golden keying, §E.7)
+    const uint64_t sampleIdx = static_cast<uint64_t>(symbolCtr) * numScP + sc;
     float acc_re[numRx], acc_im[numRx];
     for (uint32_t rx = 0; rx < numRx; ++rx) {
-        const uint64_t subseq = (static_cast<uint64_t>(u) << 16) | rx;
-        awgnSample(noiseSeed, subseq, sc, noiseStd, acc_re[rx], acc_im[rx]);
+        if (noiseStd != 0.f) {
+            awgnSample(noiseSeed, awgnSubseq(0, u, rx), sampleIdx, noiseStd,
+                       acc_re[rx], acc_im[rx]);
+        } else {
+            acc_re[rx] = 0.f;
+            acc_im[rx] = 0.f;
+        }
     }
 
     // Accumulate all contributor cells c' (Spec E §E.5 outer Σ)
@@ -199,10 +226,11 @@ __global__ void k2Kernel(const half2c*   __restrict__ H,
 
 void launchK2(const half2c* d_H, const cf32* d_y, cf32* d_r_dl,
               const uint16_t* d_victim, const cf32* d_doppler,
-              uint64_t noiseSeed, float noiseStd, cudaStream_t s) {
+              uint64_t symbolCtr, uint64_t noiseSeed, float noiseStd,
+              cudaStream_t s) {
     dim3 grid(dims::C, (dims::numScP + kTile - 1) / kTile);
     k2Kernel<<<grid, kTile, 0, s>>>(d_H, d_y, d_r_dl, d_victim, d_doppler,
-                                     noiseSeed, noiseStd);
+                                     symbolCtr, noiseSeed, noiseStd);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,21 +250,27 @@ __global__ void k3Kernel(const half2c*   __restrict__ H,
                           const uint16_t* __restrict__ d_ulContrib,
                           const cf32*     __restrict__ d_doppler,
                           const uint8_t*  __restrict__ ueTxToRx,
-                          uint64_t noiseSeed, float noiseStd) {
+                          uint64_t symbolCtr, uint64_t noiseSeed,
+                          float noiseStd) {
     using namespace dims;
     const uint32_t c         = blockIdx.x;
     const uint32_t rxru_base = blockIdx.y * static_cast<uint32_t>(kRxt);
     const uint32_t sc        = blockIdx.z * static_cast<uint32_t>(kTile) + threadIdx.x;
     if (sc >= numSc) return;
 
-    // Initialise kRxt accumulators with AWGN
-    // For UL: dir=1, "ue"=rx_ru, "rx"=c  →  subseq=(1<<32)|(rx_ru<<16)|c
+    // Initialise kRxt accumulators with AWGN.  Golden UL keying (awgn.hpp):
+    // awgnSubsequence(dir=1, ue=c, rx=rx_ru); sampleIdx = symbolCtr·numScP + sc.
+    const uint64_t sampleIdx = static_cast<uint64_t>(symbolCtr) * numScP + sc;
     float acc_re[kRxt], acc_im[kRxt];
     for (int r = 0; r < kRxt; ++r) {
         const uint32_t rx_ru = rxru_base + r;
-        const uint64_t subseq = (static_cast<uint64_t>(1) << 32) |
-                                  (static_cast<uint64_t>(rx_ru) << 16) | c;
-        awgnSample(noiseSeed, subseq, sc, noiseStd, acc_re[r], acc_im[r]);
+        if (noiseStd != 0.f) {
+            awgnSample(noiseSeed, awgnSubseq(1, c, rx_ru), sampleIdx, noiseStd,
+                       acc_re[r], acc_im[r]);
+        } else {
+            acc_re[r] = 0.f;
+            acc_im[r] = 0.f;
+        }
     }
 
     const uint16_t v = d_ulContrib[c * numScP + sc];
@@ -269,12 +303,14 @@ __global__ void k3Kernel(const half2c*   __restrict__ H,
 void launchK3(const half2c* d_H, const cf32* d_x_ul, cf32* d_r_ul,
               const uint16_t* d_ulContrib, const cf32* d_doppler,
               const uint8_t* d_ueTxToRx,
-              uint64_t noiseSeed, float noiseStd, cudaStream_t s) {
+              uint64_t symbolCtr, uint64_t noiseSeed, float noiseStd,
+              cudaStream_t s) {
     dim3 grid(dims::C,
               dims::numTx / kRxt,
               (dims::numScP + kTile - 1) / kTile);
     k3Kernel<<<grid, kTile, 0, s>>>(d_H, d_x_ul, d_r_ul, d_ulContrib,
-                                     d_doppler, d_ueTxToRx, noiseSeed, noiseStd);
+                                     d_doppler, d_ueTxToRx, symbolCtr,
+                                     noiseSeed, noiseStd);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
