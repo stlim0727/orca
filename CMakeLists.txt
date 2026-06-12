@@ -25,6 +25,12 @@ add_library(orca_dsp STATIC dsp/convert.cpp dsp/precode.cpp dsp/awgn.cpp
                             dsp/channel_apply.cpp dsp/combine.cpp)
 target_link_libraries(orca_dsp PUBLIC orca_common)
 
+# Channel toolchain — Spec G offline CIR-table writer/loader + slow-plane
+# ray→H expansion (Stages 4 & 8; MILESTONES).
+add_library(orca_channel STATIC channel/cir_writer.cpp channel/cir_loader.cpp
+                                 channel/cir_expand.cpp)
+target_link_libraries(orca_channel PUBLIC orca_common)
+
 # Separate ORU process program (ADR 0007) — host build runs an in-memory
 # smoke loop until Linux socket bring-up.
 add_executable(oru_process oru_process/main.cpp)
