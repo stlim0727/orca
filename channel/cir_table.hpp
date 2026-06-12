@@ -46,7 +46,8 @@ inline uint32_t linkBlockStride(uint32_t pMax) {
     return uint32_t{sizeof(LinkBlockHeader)} + pMax * uint32_t{sizeof(PathRecord)};
 }
 
-// ---- CellDesc — 32 bytes (G.7) ----------------------------------------------
+// ---- CellDesc — 40 bytes (G.7) ----------------------------------------------
+// pos[3]=12 + boresight[3]=12 + numTx=4 + arrayType=4 + elemSpacing=4 + _rsv=4.
 
 struct CellDesc {
     float    pos[3];       // world position (m)
@@ -56,7 +57,7 @@ struct CellDesc {
     float    elemSpacing;  // element spacing (m)
     float    _rsv;         // reserved
 };
-static_assert(sizeof(CellDesc) == 32, "CellDesc must be 32 B");
+static_assert(sizeof(CellDesc) == 40, "CellDesc must be 40 B (G.7)");
 
 // ---- UeArrayDesc — 20 bytes (G.7) -------------------------------------------
 
