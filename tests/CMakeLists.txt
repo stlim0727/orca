@@ -53,5 +53,12 @@ add_executable(test_cir_table test_cir_table.cpp)
 target_link_libraries(test_cir_table PRIVATE orca_common orca_channel)
 add_test(NAME cir_table COMMAND test_cir_table)
 
+# Cross-process IPC test (OruShm + VueShm, Linux shm backends).
+# The test file compiles on any platform; the actual fork()-based IPC paths are
+# guarded by #ifdef __linux__ so non-Linux builds pass trivially.
+add_executable(test_ipc test_ipc.cpp)
+target_link_libraries(test_ipc PRIVATE orca_common)
+add_test(NAME ipc COMMAND test_ipc)
+
 # The ORCA app's end-to-end smoke loop doubles as a test.
 add_test(NAME orca_app_smoke COMMAND orca_app 280)
