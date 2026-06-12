@@ -45,5 +45,9 @@ add_executable(test_combine test_combine.cpp)
 target_link_libraries(test_combine PRIVATE orca_common orca_dsp)
 add_test(NAME combine COMMAND test_combine)
 
+add_executable(test_golden_pipeline test_golden_pipeline.cpp)
+target_link_libraries(test_golden_pipeline PRIVATE orca_common orca_dsp)
+add_test(NAME golden_pipeline COMMAND test_golden_pipeline)
+
 # The ORCA app's end-to-end smoke loop doubles as a test.
 add_test(NAME orca_app_smoke COMMAND orca_app 280)
