@@ -1,0 +1,83 @@
+name: Auto-merge green PRs
+
+# Standing rule (per maintainer request): when a PR's CI is green AND there has
+# been no activity on it for >= QUIET_SECONDS, merge it with a merge commit.
+# The quiet window gives reviewers time to push/comment before an auto-merge —
+# any new commit/comment/review bumps the PR's updatedAt and resets the timer.
+#
+# Runs on GitHub's infra with the built-in GITHUB_TOKEN (no external proxy/auth
+# needed). Scheduled cron may be delayed under load; the >= 5 min check is
+# enforced from updatedAt regardless of when the job actually fires.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes (GitHub clamps to ~5 min minimum)
+  workflow_dispatch:         # allow a manual sweep from the Actions tab
+
+permissions:
+  contents: write            # create the merge commit
+  pull-requests: write       # merge the PR
+
+concurrency:
+  group: auto-merge
+  cancel-in-progress: false
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge quiet, green PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          QUIET_SECONDS: '300'   # 5 minutes with no PR events
+        run: |
+          set -euo pipefail
+          now=$(date -u +%s)
+
+          gh pr list --state open --json number --jq '.[].number' | while read -r num; do
+            [ -z "$num" ] && continue
+            info=$(gh pr view "$num" --json number,title,isDraft,mergeable,mergeStateStatus,updatedAt,statusCheckRollup)
+
+            title=$(jq -r '.title'           <<<"$info")
+            draft=$(jq -r '.isDraft'         <<<"$info")
+            mergeable=$(jq -r '.mergeable'   <<<"$info")
+            state=$(jq -r '.mergeStateStatus' <<<"$info")
+            updated=$(jq -r '.updatedAt'     <<<"$info")
+
+            if [ "$draft" = "true" ]; then
+              echo "PR #$num ('$title'): draft — skip"; continue
+            fi
+            if [ "$mergeable" != "MERGEABLE" ]; then
+              echo "PR #$num: mergeable=$mergeable — skip"; continue
+            fi
+            # CLEAN = mergeable, all *required* checks green, no pending reviews/blocks.
+            # (UNSTABLE = checks pending/failing; BLOCKED = review required; etc.)
+            if [ "$state" != "CLEAN" ]; then
+              echo "PR #$num: mergeStateStatus=$state — skip"; continue
+            fi
+
+            # Independent "CI success" gate: require >=1 check and every check green.
+            total=$(jq '[.statusCheckRollup[]] | length' <<<"$info")
+            notgreen=$(jq '
+              [ .statusCheckRollup[]
+                | if   .__typename=="CheckRun"      then (.status=="COMPLETED" and ((.conclusion//"")|ascii_upcase|IN("SUCCESS","SKIPPED","NEUTRAL")))
+                  elif .__typename=="StatusContext" then (((.state//"")|ascii_upcase)=="SUCCESS")
+                  else false end
+                | select(. == false) ] | length' <<<"$info")
+            if [ "$total" -eq 0 ]; then
+              echo "PR #$num: no CI checks present — skip"; continue
+            fi
+            if [ "$notgreen" -ne 0 ]; then
+              echo "PR #$num: $notgreen/$total checks not green — skip"; continue
+            fi
+
+            upd=$(date -u -d "$updated" +%s)
+            quiet=$(( now - upd ))
+            if [ "$quiet" -lt "$QUIET_SECONDS" ]; then
+              echo "PR #$num: only ${quiet}s since last event (< ${QUIET_SECONDS}) — skip"; continue
+            fi
+
+            echo "PR #$num ('$title'): green + quiet ${quiet}s — merging (merge commit)"
+            gh pr merge "$num" --merge || echo "PR #$num: merge command failed (left open)"
+          done
