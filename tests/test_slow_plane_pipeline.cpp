@@ -24,18 +24,11 @@
 #include "scenario/doppler_handoff.hpp"
 #include "scenario/scenario_state.hpp"
 #include "scenario/victim_map.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
 using namespace orca::scenario;
 using namespace orca::channel;
-
-static int failures = 0;
-
-#define CHECK(cond) \
-    do { if (!(cond)) { \
-        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        ++failures; \
-    } } while (0)
 
 static bool near(float a, float b, float tol = 1e-3f) { return std::fabs(a - b) <= tol; }
 
@@ -133,10 +126,5 @@ int main() {
 
     std::remove(fname.c_str());
 
-    if (failures == 0) {
-        std::printf("test_slow_plane_pipeline: all checks passed\n");
-        return 0;
-    }
-    std::fprintf(stderr, "test_slow_plane_pipeline: %d failure(s)\n", failures);
-    return 1;
+    return orca::test::report("test_slow_plane_pipeline");
 }

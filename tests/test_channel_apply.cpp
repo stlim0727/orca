@@ -14,18 +14,9 @@
 #include "dsp/awgn.hpp"
 #include "dsp/channel_apply.hpp"
 #include "scenario/victim_map.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static bool close(float a, float b, float tol = 1e-3f) {
     return std::fabs(a - b) <= tol;
@@ -189,10 +180,5 @@ int main() {
     testChannelApplyDl();
     testChannelApplyUl();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_channel_apply: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_channel_apply");
 }

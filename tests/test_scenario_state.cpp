@@ -19,18 +19,11 @@
 #include "common/layout.hpp"
 #include "scenario/doppler_handoff.hpp"
 #include "scenario/scenario_state.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
 using namespace orca::scenario;
 using namespace orca::channel;
-
-static int failures = 0;
-
-#define CHECK(cond) \
-    do { if (!(cond)) { \
-        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        ++failures; \
-    } } while (0)
 
 static bool near(float a, float b, float tol = 1e-3f) { return std::fabs(a - b) <= tol; }
 static bool nearD(double a, double b, double tol = 1e-9) { return std::fabs(a - b) <= tol; }
@@ -134,10 +127,5 @@ int main() {
 
     std::remove(fname.c_str());
 
-    if (failures == 0) {
-        std::printf("test_scenario_state: all checks passed\n");
-        return 0;
-    }
-    std::fprintf(stderr, "test_scenario_state: %d failure(s)\n", failures);
-    return 1;
+    return orca::test::report("test_scenario_state");
 }

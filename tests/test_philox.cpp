@@ -10,18 +10,9 @@
 
 #include "common/philox.hpp"
 #include "dsp/awgn.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static void testKnownAnswers() {
     // Random123 v1.x kat_vectors, philox4x32 (10 rounds).
@@ -141,10 +132,5 @@ int main() {
     testUniformAndNormal();
     testAwgnGolden();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_philox: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_philox");
 }

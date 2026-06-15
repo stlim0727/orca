@@ -11,18 +11,9 @@
 #include "common/layout.hpp"
 #include "dsp/combine.hpp"
 #include "scenario/beam_codebook.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static bool close(float a, float b, float tol = 1e-4f) {
     return std::fabs(a - b) <= tol;
@@ -95,10 +86,5 @@ int main() {
     for (size_t i = 0; i < layout::elemsZ; ++i)
         CHECK(z[i].re == 0.0f && z[i].im == 0.0f);
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_combine: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_combine");
 }
