@@ -18,9 +18,30 @@ if(EMU_WITH_CUDA)
   endif()
 endif()
 
+# Threads: the lock-free std::atomic rings (common/spsc_ring.hpp) need no link,
+# but the jitter/soak harness (MILESTONES Stage 6) will pull std::thread. Wire
+# -pthread project-wide via the imported target (sets compile + link flags;
+# no-op on the Windows host config). Carried on orca_common so every target
+# inherits it.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 # Header-only foundations (common/); compiled modules attach as stages land.
 add_library(orca_common INTERFACE)
 target_include_directories(orca_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(orca_common INTERFACE Threads::Threads)
+
+# POSIX shm (shm_open/shm_unlink in oru/vue_shm.hpp) lives in librt on glibc
+# < 2.34; merged into libc afterwards. Link it only where present so old
+# distros (glibc 2.31, RHEL 7) resolve the symbols and new ones link the stub
+# harmlessly. orca_rt is an empty interface carrier on non-Linux / when absent.
+add_library(orca_rt INTERFACE)
+if(UNIX AND NOT APPLE)
+  find_library(RT_LIBRARY rt)
+  if(RT_LIBRARY)
+    target_link_libraries(orca_rt INTERFACE ${RT_LIBRARY})
+  endif()
+endif()
 
 # DSP kernels — host (CPU) implementations; CUDA variants land behind
 # EMU_WITH_CUDA with the same signatures (Spec E §E.7).
@@ -43,11 +64,11 @@ target_link_libraries(orca_channel PUBLIC orca_common)
 # Separate ORU process program (ADR 0007) — host build runs an in-memory
 # smoke loop until Linux socket bring-up.
 add_executable(oru_process oru_process/main.cpp)
-target_link_libraries(oru_process PRIVATE orca_common)
+target_link_libraries(oru_process PRIVATE orca_common orca_rt)
 
 # ORCA application — Stage-1 identity hot path over the transport seams.
 add_executable(orca_app app/main.cpp)
-target_link_libraries(orca_app PRIVATE orca_common orca_dsp)
+target_link_libraries(orca_app PRIVATE orca_common orca_dsp orca_rt)
 if(EMU_WITH_CUDA)
   target_sources(orca_app PRIVATE app/gpu_pipeline.cu)
 endif()
