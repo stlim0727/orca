@@ -11,18 +11,9 @@
 #include "common/dims.hpp"
 #include "common/layout.hpp"
 #include "common/symbol_id.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static void testDims() {
     CHECK(roundUp(3276, 32) == 3296);
@@ -138,10 +129,5 @@ int main() {
     testHalfShim();
     testSymbolCounter();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_layout: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_layout");
 }

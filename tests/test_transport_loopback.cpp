@@ -9,18 +9,9 @@
 #include "common/spsc_ring.hpp"
 #include "oru/oru_loopback.hpp"
 #include "vue/vue_loopback.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static void testSpscRing() {
     SpscRing<uint32_t, 4> r;
@@ -150,10 +141,5 @@ int main() {
     testOruLoopback();
     testVueLoopback();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_transport_loopback: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_transport_loopback");
 }

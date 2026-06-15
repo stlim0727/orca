@@ -19,17 +19,10 @@
 #include "common/complex.hpp"
 #include "common/dims.hpp"
 #include "common/layout.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
 using namespace orca::channel;
-
-static int failures = 0;
-
-#define CHECK(cond) \
-    do { if (!(cond)) { \
-        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        ++failures; \
-    } } while (0)
 
 static bool near(float a, float b, float tol = 1e-3f) {
     return std::fabs(a - b) <= tol;
@@ -161,7 +154,7 @@ static void testExpansion(const std::string& fname) {
     std::string err;
     if (!table.load(fname, err)) {
         std::fprintf(stderr, "  expansion test skipped: %s\n", err.c_str());
-        ++failures;
+        ++::orca::test::g_failures;
         return;
     }
 
@@ -225,10 +218,5 @@ int main() {
 
     std::remove(fname.c_str());
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_cir_table: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_cir_table");
 }

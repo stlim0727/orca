@@ -3,22 +3,11 @@
 // oldest-Filling eviction, and never-block claim rejection.
 
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 
 #include "orchestr/symbol_ring.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static SymbolId sym(uint16_t sfn, uint8_t slot, uint8_t s) {
     return SymbolId{0, Dir::DL, sfn, slot, s};
@@ -128,10 +117,5 @@ int main() {
     testDeadlinePartial();
     testEvictionAndRejection();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_ring: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_ring");
 }

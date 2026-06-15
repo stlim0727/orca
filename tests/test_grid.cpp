@@ -13,18 +13,11 @@
 
 #include "channel/cir_table.hpp"
 #include "scenario/grid.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
 using namespace orca::scenario;
 using orca::channel::CirHeader;
-
-static int failures = 0;
-
-#define CHECK(cond) \
-    do { if (!(cond)) { \
-        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        ++failures; \
-    } } while (0)
 
 static bool nearD(double a, double b, double tol = 1e-9) {
     return std::fabs(a - b) <= tol;
@@ -112,10 +105,5 @@ int main() {
     // 3-D z clamps high.
     CHECK(posToGp(h3, Vec3{0.0, 0.0, 1e6}).iz == h3.nz - 1);  // 1
 
-    if (failures == 0) {
-        std::printf("test_grid: all checks passed\n");
-        return 0;
-    }
-    std::fprintf(stderr, "test_grid: %d failure(s)\n", failures);
-    return 1;
+    return orca::test::report("test_grid");
 }

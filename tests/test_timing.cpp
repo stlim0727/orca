@@ -8,18 +8,9 @@
 
 #include "orchestr/jitter.hpp"
 #include "orchestr/timing.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static void testSymbolGeometry() {
     // µ=1 exact values (38.211 normal CP).
@@ -110,10 +101,5 @@ int main() {
     testDeadlines();
     testJitter();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_timing: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_timing");
 }

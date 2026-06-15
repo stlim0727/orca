@@ -21,18 +21,9 @@
 
 #include "oru/oru_shm.hpp"
 #include "vue/vue_shm.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                              \
-    do {                                                                         \
-        if (!(cond)) {                                                           \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);\
-            ++failures;                                                          \
-        }                                                                        \
-    } while (0)
 
 // Bounded spin-wait.  Returns true if fn() returned true within the limit.
 template <typename Fn>
@@ -48,7 +39,7 @@ static void collect(pid_t pid, const char* label) {
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
         std::fprintf(stderr, "FAIL child %s: status=%d exit=%d\n", label,
                      status, WIFEXITED(status) ? WEXITSTATUS(status) : -1);
-        ++failures;
+        ++::orca::test::g_failures;
     }
 }
 
@@ -59,12 +50,12 @@ static void testOruShm() {
     OruShm shm("/orca.test.oru.v1");
     if (!shm.create()) {
         std::fprintf(stderr, "FAIL OruShm::create\n");
-        ++failures;
+        ++::orca::test::g_failures;
         return;
     }
 
     const pid_t pid = ::fork();
-    if (pid < 0) { ++failures; return; }
+    if (pid < 0) { ++::orca::test::g_failures; return; }
 
     if (pid == 0) {
         // ── Child (ORCA side) ──────────────────────────────────────────────
@@ -160,12 +151,12 @@ static void testVueShm() {
     VueShm vue("/orca.test.vue.v1");
     if (!vue.create()) {
         std::fprintf(stderr, "FAIL VueShm::create\n");
-        ++failures;
+        ++::orca::test::g_failures;
         return;
     }
 
     const pid_t pid = ::fork();
-    if (pid < 0) { ++failures; return; }
+    if (pid < 0) { ++::orca::test::g_failures; return; }
 
     if (pid == 0) {
         // ── Child (vUE side) ───────────────────────────────────────────────
@@ -238,12 +229,7 @@ int main() {
     testOruShm();
     testVueShm();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_ipc: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_ipc");
 }
 
 #else

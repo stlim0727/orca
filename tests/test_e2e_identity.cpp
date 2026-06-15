@@ -15,19 +15,10 @@
 #include "tests/vdu_stub.hpp"
 #include "vue/vue_loopback.hpp"
 #include "vue/vue_stub.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
 using testutil::VduStub;
-
-static int failures = 0;
-
-#define CHECK(cond)                                                     \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-            ++failures;                                                 \
-        }                                                               \
-    } while (0)
 
 static void testConvertRoundTrip() {
     // K0 → K5 is bit-exact for every representable wire value (sampled).
@@ -149,10 +140,5 @@ int main() {
     testEndToEndIdentity();
     testPartialSymbolEndToEnd();
 
-    if (failures) {
-        std::fprintf(stderr, "%d check(s) failed\n", failures);
-        return EXIT_FAILURE;
-    }
-    std::puts("test_e2e_identity: all checks passed");
-    return EXIT_SUCCESS;
+    return orca::test::report("test_e2e_identity");
 }

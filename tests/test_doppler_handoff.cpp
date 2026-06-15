@@ -15,17 +15,10 @@
 #include "common/dims.hpp"
 #include "orchestr/timing.hpp"
 #include "scenario/doppler_handoff.hpp"
+#include "tests/check.hpp"
 
 using namespace orca;
 using namespace orca::scenario;
-
-static int failures = 0;
-
-#define CHECK(cond) \
-    do { if (!(cond)) { \
-        std::fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); \
-        ++failures; \
-    } } while (0)
 
 static bool nearD(double a, double b, double tol = 1e-9) {
     return std::fabs(a - b) <= tol;
@@ -103,10 +96,5 @@ int main() {
     CHECK(nearD(rot[dopplerIdx(0, 0)].re, std::cos(3.0 * dphi), 1e-6));
     CHECK(nearD(rot[dopplerIdx(0, 0)].im, std::sin(3.0 * dphi), 1e-6));
 
-    if (failures == 0) {
-        std::printf("test_doppler_handoff: all checks passed\n");
-        return 0;
-    }
-    std::fprintf(stderr, "test_doppler_handoff: %d failure(s)\n", failures);
-    return 1;
+    return orca::test::report("test_doppler_handoff");
 }
