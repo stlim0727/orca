@@ -87,7 +87,7 @@ add_test(NAME slow_plane_pipeline COMMAND test_slow_plane_pipeline)
 # The test file compiles on any platform; the actual fork()-based IPC paths are
 # guarded by #ifdef __linux__ so non-Linux builds pass trivially.
 add_executable(test_ipc test_ipc.cpp)
-target_link_libraries(test_ipc PRIVATE orca_common)
+target_link_libraries(test_ipc PRIVATE orca_common orca_rt)
 add_test(NAME ipc COMMAND test_ipc)
 
 # The ORCA app's end-to-end smoke loop doubles as a test.
